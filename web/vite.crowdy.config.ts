@@ -10,6 +10,15 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig, mergeConfig } from 'vite'
 import type { Plugin, UserConfig } from 'vite'
 import base from './vite.config.ts'
+// The stock notice's namespace, field and copy version, read from the PINNED
+// upstream at build time (this config runs inside its workspace; the boot page
+// cannot import the package because apps/web does not depend on it). The boot
+// page pre-acknowledges exactly this version -- see preAcknowledgeWelcome().
+import {
+  WELCOME_NOTICE_ACK_FIELD,
+  WELCOME_NOTICE_SETTINGS_NAMESPACE,
+  WELCOME_NOTICE_VERSION,
+} from '../../packages/client/ui-settings-models/src/onboarding-copy.ts'
 
 const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url))
 
@@ -47,6 +56,13 @@ export default mergeConfig(
   baseConfig,
   defineConfig({
     plugins: [emitCrowdyPage()],
+    define: {
+      __CROWDY_WELCOME_NOTICE__: JSON.stringify({
+        namespace: WELCOME_NOTICE_SETTINGS_NAMESPACE,
+        field: WELCOME_NOTICE_ACK_FIELD,
+        version: WELCOME_NOTICE_VERSION,
+      }),
+    },
     build: {
       rollupOptions: {
         input: { ...baseInput, 'crowdy-boot': src('./src/crowdy-boot.ts') },
