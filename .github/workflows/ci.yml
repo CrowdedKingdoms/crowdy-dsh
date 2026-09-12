@@ -143,19 +143,31 @@ jobs:
 
       # The upstream monorepo build takes minutes and depends only on the pinned
       # commit, so its outputs are cached on that key. A cache hit skips it.
+      #
+      # The paths mirror upstream's pnpm-workspace.yaml (vendor/*, packages/*/*,
+      # native/system and native/system/packages/*, apps/*). A workspace member
+      # missing from this list produces a cache that restores cleanly and then
+      # fails the pack with "unresolvable module request" -- v1 of this key
+      # lacked native/system/**, which is where @deepseek-ai/node-addon-system
+      # builds its lib/, so bump the suffix whenever the list changes.
       - name: Restore the upstream build
         id: upstream-cache
         uses: actions/cache@v4
         with:
           path: |
             deepseek-harness/node_modules
+            deepseek-harness/vendor/*/lib
+            deepseek-harness/vendor/*/dist
             deepseek-harness/packages/*/*/lib
             deepseek-harness/packages/*/*/dist
+            deepseek-harness/native/system/lib
+            deepseek-harness/native/system/dist
+            deepseek-harness/native/system/packages/*/lib
+            deepseek-harness/native/system/packages/*/dist
             deepseek-harness/apps/*/lib
             deepseek-harness/apps/*/dist
-            deepseek-harness/vendor/*/lib
             !deepseek-harness/packages/crowdy/**
-          key: dsh-upstream-${{ runner.os }}-${{ steps.pin.outputs.commit }}-v1
+          key: dsh-upstream-${{ runner.os }}-${{ steps.pin.outputs.commit }}-v2
 
       - name: Build the artifact
         working-directory: crowdy-dsh
