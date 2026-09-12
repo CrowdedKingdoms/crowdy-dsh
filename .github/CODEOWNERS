@@ -1,0 +1,25 @@
+# Review ownership for the release path and the tooling that drives it.
+#
+# GitHub consults this file ONLY when it evaluates a pull request's reviews, and ONLY from the
+# branch that pull request TARGETS -- never from the default branch. On its own it blocks
+# nothing: what gives it force is whichever org ruleset applies to THIS branch. The file exists
+# on each of the three branches separately and is kept identical across them.
+#
+# The operator's branch policy requires an admin for any pull request into `dev` or `test`
+# that touches CI or scripts, and requires an admin to merge into `prod` at all. This file is
+# the whole implementation of the first half; a path absent from this list is a path any
+# developer may change and merge alone. It is deliberately BROAD -- all of `/scripts/`.
+#
+# There are three branches and only three: `dev`, `test`, `prod`.
+
+/.github/ @michaelmarshall
+/scripts/ @michaelmarshall
+
+# Token and project-write surface (security-hardening program, 2026-09-08).
+# A PR touching these requests the code owner AND, per AGENTS.md, runs the
+# security-review subagent with its findings pasted into the PR body.
+/src/bridge/ @michaelmarshall
+/src/fs/ @michaelmarshall
+/src/crowdy/client.ts @michaelmarshall
+/src/crowdy/config.ts @michaelmarshall
+/web/crowdy-boot.ts @michaelmarshall

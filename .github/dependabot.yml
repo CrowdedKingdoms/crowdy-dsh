@@ -1,0 +1,37 @@
+# Dependabot: dependency and Actions updates, weekly, grouped (security-hardening
+# program, 2026-09-08). Version updates target `dev` (not the GitHub default
+# `prod`). Merge green low-risk PRs to `dev`, then promote `dev` -> `test` ->
+# `prod`. Security-alert PRs still open against `prod`; retarget or cherry-pick
+# onto `dev` -- do not merge them into prod first unless the operator authorizes
+# a hotfix.
+#
+# Most of this package's dependencies are `workspace:*` siblings resolved inside
+# the pinned deepseek-harness checkout, which Dependabot cannot see; what it
+# manages here is the devDependency toolchain and the Actions pins.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    target-branch: dev
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # SDK pins are tier-aligned (dev -> X.Y.Z-dev.N, ...) and promoted by hand;
+      # a bot bump would cross tiers.
+      - dependency-name: "@crowdedkingdoms/*"
+      # Upstream harness packages are pinned through upstream.json, not npm.
+      - dependency-name: "@deepseek-ai/*"
+      # Semver-major is a scheduled upgrade, not a weekly bot PR.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    target-branch: dev

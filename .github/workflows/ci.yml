@@ -1,0 +1,197 @@
+name: CI
+
+run-name: ci ${{ github.ref_name }}
+
+# Builds, tests and packs `@crowdedkingdoms/crowdy-dsh` on every push and pull
+# request: the DeepSeek Harness plugins whose filesystem is a Crowdy Studio
+# project, and the packed in-browser harness image (`dist/dsh-web/`) that games
+# copy under `/dsh/`. Publishing is a separate workflow (publish.yml) driven by
+# environment-prefixed tags.
+#
+# The package can only build inside the deepseek-harness pnpm workspace, so this
+# job checks the harness out at the tag pinned in upstream.json (a sibling
+# checkout, not a submodule: this repo carries none) and runs
+# scripts/build-image.sh against it. The upstream build is the slow part; its
+# output is cached on the pinned commit.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+  # publish.yml reuses this build so a release publishes exactly what CI tested.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: Build, test and pack the harness image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          path: crowdy-dsh
+
+      - name: Read the upstream pin
+        id: pin
+        working-directory: crowdy-dsh
+        run: |
+          set -euo pipefail
+          node -e '
+            const pin = JSON.parse(require("fs").readFileSync("upstream.json", "utf8"));
+            const out = `tag=${pin.tag}\ncommit=${pin.commit}\n`;
+            require("fs").appendFileSync(process.env.GITHUB_OUTPUT, out);
+            console.log(out);
+          '
+
+      # A sibling of this checkout, exactly where build-image.sh looks by default
+      # (../deepseek-harness relative to the repo root).
+      - uses: actions/checkout@v7
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: ${{ steps.pin.outputs.tag }}
+          persist-credentials: false
+          path: deepseek-harness
+
+      - name: The checkout is the pinned commit
+        working-directory: deepseek-harness
+        env:
+          PINNED: ${{ steps.pin.outputs.commit }}
+        run: |
+          set -euo pipefail
+          have="$(git rev-parse HEAD)"
+          if [ "$have" != "$PINNED" ]; then
+            echo "::error::deepseek-harness tag resolved to $have but upstream.json pins $PINNED"
+            exit 1
+          fi
+
+      # No registry-url here: the build reads public packages only, and the
+      # .npmrc setup-node would write names NODE_AUTH_TOKEN, which this job
+      # deliberately does not have.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.19"
+
+      - name: Enable pnpm through corepack
+        run: corepack enable
+
+      # The declared @crowdedkingdoms/crowdyjs pin is not always on the registry
+      # yet: a coordinated SDK change publishes X.Y.Z-dev.N only when its CrowdyJS
+      # PR merges to dev, and this package has to build before that. When the
+      # registry lacks the pin, the SDK is built from source (CrowdyJS is public)
+      # and handed to build-image.sh through CROWDYJS_DIST. The branch is the
+      # first of: crowdyDsh.sdkSourceBranch in package.json (the hint a
+      # coordinated change leaves), a CrowdyJS branch of this build's name, the
+      # branch this work targets, dev. build-image.sh refuses a source SDK whose
+      # version differs from the pin (prerelease suffix aside), so this cannot
+      # bundle the wrong SDK quietly.
+      - name: Resolve the CrowdyJS the worker bundles
+        id: sdk
+        working-directory: crowdy-dsh
+        env:
+          BR: ${{ github.head_ref || github.ref_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          declared="$(node -p "require('./package.json').devDependencies['@crowdedkingdoms/crowdyjs']")"
+          if npm view "@crowdedkingdoms/crowdyjs@$declared" version >/dev/null 2>&1; then
+            echo "@crowdedkingdoms/crowdyjs@$declared is on the registry; installing it"
+            echo "source=registry" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "@crowdedkingdoms/crowdyjs@$declared is not on the registry; building the SDK from source"
+          hint="$(node -p "require('./package.json').crowdyDsh?.sdkSourceBranch ?? ''")"
+          case "$BR" in */v[0-9]*) BR="${BR%%/*}" ;; esac
+          ref=""
+          for cand in ${hint:+"$hint"} "$BR" ${BASE:+"$BASE"} dev; do
+            if git ls-remote --exit-code --heads https://github.com/CrowdedKingdoms/CrowdyJS "$cand" >/dev/null 2>&1; then
+              ref="$cand"; break
+            fi
+          done
+          if [ -z "$ref" ]; then
+            echo "::error::no CrowdyJS branch among '${hint:-<no hint>}', '$BR', '${BASE:-<no base>}', 'dev'"
+            exit 1
+          fi
+          echo "CrowdyJS source branch: $ref"
+          echo "source=branch" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        if: steps.sdk.outputs.source == 'branch'
+        with:
+          repository: CrowdedKingdoms/CrowdyJS
+          ref: ${{ steps.sdk.outputs.ref }}
+          persist-credentials: false
+          path: CrowdyJS
+
+      - name: Build CrowdyJS from source
+        if: steps.sdk.outputs.source == 'branch'
+        working-directory: CrowdyJS
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          echo "CrowdyJS $(node -p "require('./package.json').version") at $(git rev-parse --short HEAD)"
+
+      # The upstream monorepo build takes minutes and depends only on the pinned
+      # commit, so its outputs are cached on that key. A cache hit skips it.
+      - name: Restore the upstream build
+        id: upstream-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deepseek-harness/node_modules
+            deepseek-harness/packages/*/*/lib
+            deepseek-harness/packages/*/*/dist
+            deepseek-harness/apps/*/lib
+            deepseek-harness/apps/*/dist
+            deepseek-harness/vendor/*/lib
+            !deepseek-harness/packages/crowdy/**
+          key: dsh-upstream-${{ runner.os }}-${{ steps.pin.outputs.commit }}-v1
+
+      - name: Build the artifact
+        working-directory: crowdy-dsh
+        env:
+          UPSTREAM_DIR: ${{ github.workspace }}/deepseek-harness
+          SKIP_UPSTREAM: ${{ steps.upstream-cache.outputs.cache-hit == 'true' && '1' || '0' }}
+          CROWDYJS_DIST: ${{ steps.sdk.outputs.source == 'branch' && format('{0}/CrowdyJS/dist', github.workspace) || '' }}
+        run: bash scripts/build-image.sh
+
+      # This repo is public and so is the package: nothing in the tree or the
+      # artifact may name a private repository or internal infrastructure.
+      - name: No private-repo references in the tree or the artifact
+        working-directory: crowdy-dsh
+        run: npm run check:content-policy
+
+      - name: The release-tier gate still refuses and accepts what it should
+        working-directory: crowdy-dsh
+        run: npm run check:release-tier-gate
+
+      - name: The staged package installs and carries the stamp
+        working-directory: crowdy-dsh/dist/npm
+        run: |
+          set -euo pipefail
+          test -f dist/dsh-web/BUILD.json
+          test -f dist/dsh-web/THIRD_PARTY_NOTICES.md
+          test -f LICENSE
+          npm pack --dry-run
+          # No runtime dependencies: a game installs this for dist/dsh-web only.
+          node -e '
+            const m = JSON.parse(require("fs").readFileSync("package.json", "utf8"));
+            if (m.dependencies && Object.keys(m.dependencies).length) throw new Error("staged manifest has dependencies");
+            if (m.private) throw new Error("staged manifest is private");
+          '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crowdy-dsh-npm
+          path: crowdy-dsh/dist/npm
+          retention-days: 14

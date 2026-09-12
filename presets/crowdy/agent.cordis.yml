@@ -1,0 +1,140 @@
+# The `crowdy` agent preset: a coding agent whose filesystem is a Crowdy Studio
+# project rather than this machine's disk, and whose only way to run code is
+# the Studio draft/deploy loop.
+#
+# Derived from the shipped `standard` preset. What matters here is mostly what
+# is ABSENT: the host composition mounts `@crowdedkingdoms/crowdy-dsh/fs` as
+# `ctx.fs`, and any tool that reaches the real disk by another route would show
+# the agent a world its edits cannot touch.
+#
+#   tool-bash / tool-pwsh  — there is no shell; a Crowdy project is compiled by
+#                            the platform, never on the machine running this.
+#   tool-fs-search         — glob/grep spawn ripgrep through `ctx.subprocess`,
+#                            deliberately NOT through `ctx.fs`. The Crowdy
+#                            search plugin registers the same names in memory.
+#   tool-jobs, skill-*     — background jobs and skill discovery walk local roots.
+#   tool-web               — the platform's model endpoint forbids provider web
+#                            plugins; the harness gets no browser either.
+#   delegation             — subagents are a later cut (each one costs the
+#                            player's wallet).
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    suffix: The project is mounted at {{cwd}}; `server/` and `client/` are its two targets.
+    prefix: >-
+      You are the Crowdy Studio agent, powered by the {{model}} model. You help a
+      player write, test and deploy a mod for a Crowded Kingdoms game by editing
+      their Crowdy Studio project.
+
+      The filesystem your tools see is that project only, mounted at `{{cwd}}`:
+      `server/` is the SERVER target (Rust compiled to WebAssembly, run on the
+      player's grid by the platform) and `client/` is the CLIENT target (Rust to
+      WebAssembly, run in the player's browser). Each target holds `Cargo.toml`
+      and `.rs` files under `src/`; nothing else can be stored, so create no other
+      paths. `captures/` holds screenshots of the game and `context/` holds game
+      observations, client logs and the latest build diagnostics; both are
+      read-only and refreshed by Crowdy Studio.
+
+      When the project is bound to a GitHub repository, GitHub is the source of
+      truth: every write commits to the bound branch and Studio mirrors it. Say
+      so when it matters (for example, the player can review commits on GitHub).
+
+      You have no shell. To compile and run what you wrote, call `draft_test`;
+      read the diagnostics it returns, fix them, and run it again. Use
+      `screenshot` (or the capture `draft_test` takes) to see the game, and
+      `game_observe` for exact coordinates. `deploy_live` publishes to other
+      players and always asks the player to approve; never call it unless the
+      player asked for a live deploy and the draft passed.
+
+      Use `sdk_lookup` before calling any `crowdy::` host function you are not
+      certain exists; never invent one. Read a file before you change it. Keep
+      edits small and explain what you changed in one or two sentences.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── filesystem and project tools ────────────────────────────────────────────
+
+# Registers read/write/edit/read_image into the host `tools` registry against
+# whatever backend the host mounted on `ctx.fs` — here, the Crowdy project.
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+# In-memory glob/grep over the same project snapshot the fs backend serves.
+- id: tool-fs-search-crowdy
+  name: '@crowdedkingdoms/crowdy-dsh/search'
+  config:
+    globMaxResults: 100
+    grepMaxMatches: 250
+    grepMaxLineBytes: 2000
+
+# Closed-world crowdy-compute-sdk index + `sdk_lookup`.
+- id: sdk-index-crowdy
+  name: '@crowdedkingdoms/crowdy-dsh/sdk-index'
+
+# draft_test / deploy_live / screenshot / runtime_status / client_logs /
+# game_observe / project_* — everything the Studio page executes for the model.
+- id: crowdy-tools
+  name: '@crowdedkingdoms/crowdy-dsh/tools'
+  config:
+    buildTimeoutMs: 180000
+    screenshotTimeoutMs: 15000
+    autoScreenshot: true
+
+# ── plan mode ───────────────────────────────────────────────────────────────
+
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: '@deepseek-ai/dsh-plan-mode'
+      config:
+        section: |
+          You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the player switches the session mode. Imperative language to implement changes means plan the implementation, not execute it.
+
+          Explore first: read the project files and `context/` to ground the plan in the actual source and the latest diagnostics. Do not write or edit files, and do not run draft_test or deploy_live while planning.
+
+          When ready, call exit_plan_mode with the complete plan markdown, starting with a # title, as the only and final tool call in that response.
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'

@@ -1,0 +1,180 @@
+name: Publish to npm
+
+run-name: publish ${{ github.ref_name }}
+
+# Releases are cut by ENVIRONMENT-PREFIXED tags on the three long-lived branches:
+# `dev/v0.2.0`, `test/v0.2.0`, `prod/v0.2.0`. The tier is the tag PREFIX, and the
+# `guard` job refuses a tag whose commit is not contained in the branch it names.
+#
+# npm accepts a version string exactly once, so the same X.Y.Z cannot be published
+# three times. Each tier gets its own artifact and its own dist-tag:
+#
+#   dev/v0.2.0  -> 0.2.0-dev.N   @dev
+#   test/v0.2.0 -> 0.2.0-test.N  @test
+#   prod/v0.2.0 -> 0.2.0         @latest
+#
+# N is the next free ordinal for that exact base version, read from the registry
+# (scripts/ci/resolve-npm-publish-version.mjs).
+#
+# Authentication is npm Trusted Publishing (OIDC): the package's trusted
+# publisher on npmjs.com names this repository and this workflow file. There is
+# no token in this repository. A re-run of a prod tag is a no-op because the
+# version is already published; a re-run of a dev/test tag mints the next ordinal.
+on:
+  push:
+    tags:
+      - 'dev/v*.*.*'
+      - 'test/v*.*.*'
+      - 'prod/v*.*.*'
+  workflow_dispatch:
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # THE GATE. Runs first, and nothing is built or published until it passes.
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tier: ${{ steps.gate.outputs.tier }}
+      version: ${{ steps.gate.outputs.version }}
+    steps:
+      # fetch-depth: 0 and persisted credentials are BOTH required: the gate runs
+      # `git fetch origin` and a merge-base containment check against the tier branch.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: gate
+        run: scripts/ci/resolve-release-tier.sh
+      # The tag and package.json must agree: two records of the same fact edited by
+      # different hands. Refuse rather than publish under a version nobody asked for.
+      - name: The tag names the version package.json declares
+        env:
+          TAG_VERSION: ${{ steps.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          declared="$(node -p "require('./package.json').version")"
+          tagged="${TAG_VERSION#v}"
+          if [ "$declared" != "$tagged" ]; then
+            echo "::error::tag names $tagged but package.json says $declared. Bump package.json (npm version --no-git-tag-version $tagged) and re-tag that commit."
+            exit 1
+          fi
+
+  # The same build CI ran on the branch, so a release publishes what was tested.
+  build:
+    needs: guard
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  publish:
+    name: Publish to npm
+    needs: [guard, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # npm Trusted Publishing (OIDC) and provenance
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+
+      # npm Trusted Publishing requires npm CLI >= 11.5.1.
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: crowdy-dsh-npm
+          path: staged
+
+      # Ask the registry what exists, and DO NOT treat an unanswered question as an
+      # answer: E404 means "no versions"; an unreachable registry means "unknown".
+      - name: Read published versions from the registry
+        run: |
+          set -euo pipefail
+          if raw=$(npm view @crowdedkingdoms/crowdy-dsh versions --json 2>"$RUNNER_TEMP/npm-view.err"); then
+            :
+          elif grep -qE 'E404|is not in this registry' "$RUNNER_TEMP/npm-view.err"; then
+            echo "::notice::@crowdedkingdoms/crowdy-dsh has never been published; starting the series."
+            raw='[]'
+          else
+            cat "$RUNNER_TEMP/npm-view.err" >&2
+            echo "::error::could not read the registry; refusing to guess the next version."
+            exit 1
+          fi
+          printf '%s' "$raw" > "$RUNNER_TEMP/registry-versions.json"
+
+      - name: Resolve the version and dist-tag
+        id: resolve
+        env:
+          TIER: ${{ needs.guard.outputs.tier }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: node scripts/ci/resolve-npm-publish-version.mjs "$TIER" "${VERSION#v}" < "$RUNNER_TEMP/registry-versions.json"
+
+      # A prod re-run must not be an error; dev/test ordinals are free by construction.
+      - name: Check whether that version is already published
+        id: check
+        env:
+          PUBLISH_VERSION: ${{ steps.resolve.outputs.publish_version }}
+        run: |
+          set -euo pipefail
+          if node -e '
+            const raw = require("fs").readFileSync(process.argv[1], "utf8").trim() || "[]";
+            const parsed = JSON.parse(raw);
+            const versions = Array.isArray(parsed) ? parsed : [parsed];
+            process.exit(versions.includes(process.argv[2]) ? 0 : 1);
+          ' "$RUNNER_TEMP/registry-versions.json" "$PUBLISH_VERSION"; then
+            echo "::notice::@crowdedkingdoms/crowdy-dsh@$PUBLISH_VERSION already exists on npm. Skipping publish."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stamp the staged manifest with the publish version
+        if: steps.check.outputs.should_publish == 'true'
+        working-directory: staged
+        env:
+          PUBLISH_VERSION: ${{ steps.resolve.outputs.publish_version }}
+        run: npm version "$PUBLISH_VERSION" --no-git-tag-version --allow-same-version
+
+      # The last point at which a leak can still be stopped, and the only one that
+      # sees exactly what is about to be uploaded.
+      - name: No private-repo references in what is about to be published
+        if: steps.check.outputs.should_publish == 'true'
+        run: node scripts/check-content-policy.mjs staged
+
+      - name: Publish
+        if: steps.check.outputs.should_publish == 'true'
+        working-directory: staged
+        env:
+          DIST_TAG: ${{ steps.resolve.outputs.dist_tag }}
+        run: npm publish --provenance --access public --tag "$DIST_TAG"
+
+      # Ask the REGISTRY what it now serves, rather than trusting what we uploaded.
+      - name: What the registry now serves
+        env:
+          PUBLISH_VERSION: ${{ steps.resolve.outputs.publish_version }}
+          DIST_TAG: ${{ steps.resolve.outputs.dist_tag }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            if npm view "@crowdedkingdoms/crowdy-dsh@$PUBLISH_VERSION" version >/dev/null 2>&1; then
+              npm view "@crowdedkingdoms/crowdy-dsh@$PUBLISH_VERSION" crowdyDsh.build.upstream.tag crowdyDsh.build.crowdyjs.version
+              served="$(npm view "@crowdedkingdoms/crowdy-dsh@$DIST_TAG" version)"
+              echo "dist-tag $DIST_TAG -> $served"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::$PUBLISH_VERSION did not appear on the registry"
+          exit 1

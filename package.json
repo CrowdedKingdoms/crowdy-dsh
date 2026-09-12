@@ -1,0 +1,101 @@
+{
+  "name": "@crowdedkingdoms/crowdy-dsh",
+  "version": "0.2.0",
+  "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CrowdedKingdoms/crowdy-dsh.git"
+  },
+  "homepage": "https://github.com/CrowdedKingdoms/crowdy-dsh#readme",
+  "bugs": {
+    "url": "https://github.com/CrowdedKingdoms/crowdy-dsh/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "description": "DeepSeek Harness plugins whose filesystem is a Crowdy Studio project (GitHub-bound when possible), plus the packed in-browser harness image Crowdy Studio embeds.",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./fs": {
+      "types": "./lib/types/fs/crowdy-file-system.d.ts",
+      "default": "./lib/fs/crowdy-file-system.js"
+    },
+    "./search": {
+      "types": "./lib/types/search/search-tools.d.ts",
+      "default": "./lib/search/search-tools.js"
+    },
+    "./sdk-index": {
+      "types": "./lib/types/sdk-index/index.d.ts",
+      "default": "./lib/sdk-index/index.js"
+    },
+    "./tools": {
+      "types": "./lib/types/tools/index.d.ts",
+      "default": "./lib/tools/index.js"
+    },
+    "./attachments": {
+      "types": "./lib/types/attachments/crowdy-attachment-store.d.ts",
+      "default": "./lib/attachments/crowdy-attachment-store.js"
+    },
+    "./persist": {
+      "types": "./lib/types/persist/index.d.ts",
+      "default": "./lib/persist/index.js"
+    },
+    "./bridge": {
+      "types": "./lib/types/bridge/index.d.ts",
+      "default": "./lib/bridge/index.js"
+    },
+    "./bridge-protocol": {
+      "types": "./lib/types/bridge/protocol.d.ts",
+      "default": "./lib/bridge/protocol.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./lib/index.js",
+  "files": [
+    "lib",
+    "presets",
+    "profile",
+    "dist/dsh-web",
+    "upstream.json",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/bundle-sdk.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test \"lib/**/*.test.js\"",
+    "cockpit": "dsh --profile web --patch ./profile/crowdy-node.patch.yml",
+    "image": "bash ./scripts/build-image.sh",
+    "check:content-policy": "node scripts/check-content-policy.mjs",
+    "check:release-tier-gate": "bash scripts/ci/resolve-release-tier.test.sh"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "workspace:*",
+    "@deepseek-ai/dsh-attachment": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/dsh-user-approval": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:*"
+  },
+  "devDependencies": {
+    "@crowdedkingdoms/crowdyjs": "16.0.0-dev.1",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "crowdyDsh": {
+    "sdkSourceBranch": "feat/dsh-pane"
+  }
+}

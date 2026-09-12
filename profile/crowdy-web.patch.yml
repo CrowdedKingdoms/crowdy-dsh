@@ -1,0 +1,97 @@
+# Crowdy Studio overlay for the browser-worker image, applied over the shipped
+# `web` profile at pack time:
+#
+#   dsh --profile web --patch profile/crowdy-web.patch.yml --dump-config
+#
+# The composed tree is what `scripts/pack-image.ts` hands to the packer.
+#
+# Three changes to the stock web composition:
+#   1. the disk-backed filesystem is replaced by the Crowdy Studio backend, so
+#      the unmodified read/write/edit/read_image tools operate on the project;
+#   2. the sharp-backed attachment store is replaced by an in-memory one that
+#      works without native modules, so screenshots reach the model;
+#   3. the page bridge joins, and the `crowdy` preset becomes the default.
+#
+# Connection settings arrive at boot as `$DSH_HOME/crowdy.json` (an overlay the
+# Studio page writes), never from this file.
+
+- id: fs-sandbox
+  disabled: true
+
+- id: attachment-local
+  disabled: true
+
+# The `@file` reference source walks the host disk; our files are not there.
+- id: file-reference-local
+  disabled: true
+
+# Native directory picking has no meaning in a worker; the project is the
+# only workspace and the page registers it.
+- id: directory-picker
+  disabled: true
+
+# "Open in app" probes the host machine for editors; there is none.
+- id: open-in-app
+  disabled: true
+- id: ui-open-in-app
+  disabled: true
+
+# Host web tools stay disabled (the base already does so); nothing here should
+# fetch arbitrary URLs from the player's browser.
+- id: web
+  disabled: true
+
+# No telemetry leaves the player's browser. The base composition ships the
+# OTLP exporter pointed at DeepSeek's collector in FEEDBACK_ONLY mode; the
+# host CSP would block the request, but a disabled plugin does not try, and
+# finish-artifact.mjs refuses an image that so much as names the endpoint.
+- id: session-telemetry-otel
+  disabled: true
+  config:
+    mode: DISABLED
+    exporter:
+      url: ''
+
+- id: web-search-deepseek
+  disabled: true
+- id: web-fetch-http
+  disabled: true
+
+# Sandbox policy: the whole mount is the workspace, and the Crowdy backend does
+# not confine, so `workspace-write` reads as "the project".
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    workspaceRoot: /dsh/workspace
+
+- id: agent-presets
+  config:
+    default: crowdy
+
+- insert:
+    - id: crowdy-fs
+      name: '@crowdedkingdoms/crowdy-dsh/fs'
+      config:
+        # The image root is /dsh; the stock workspace directory becomes the
+        # project mount so a session's cwd IS the project.
+        root: /dsh/workspace
+        githubFirst: true
+
+    - id: attachment-crowdy
+      name: '@crowdedkingdoms/crowdy-dsh/attachments'
+      config:
+        maxImageBytes: 4194304
+        maxImageDimension: 8192
+
+    - id: crowdy-bridge
+      name: '@crowdedkingdoms/crowdy-dsh/bridge'
+      config:
+        timeoutMs: 15000
+
+    # Mirror sessions, projection caches and settings into the origin-private
+    # file system; the page restores them as an overlay on the next boot.
+    - id: crowdy-persist
+      name: '@crowdedkingdoms/crowdy-dsh/persist'
+      config:
+        intervalMs: 3000
+        maxBytes: 50331648

@@ -1,0 +1,7 @@
+{
+  "$comment": "The DeepSeek Harness this package builds against. Not a submodule (this wrapper carries none, see AGENTS.md): scripts/checkout-upstream.sh clones this tag into UPSTREAM_DIR, and scripts/build-image.sh refuses a checkout at any other commit. Bump deliberately; the plugin APIs are experimental.",
+  "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
+  "tag": "dsh-v0.1.5-rc.2",
+  "commit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "license": "MIT"
+}

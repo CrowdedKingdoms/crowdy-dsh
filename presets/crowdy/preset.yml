@@ -1,0 +1,3 @@
+name: Crowdy Studio
+description: Edits the open Crowdy Studio project (GitHub-bound when possible), runs draft tests, reads screenshots and game context. No shell and no disk access, because the project is not on this machine.
+order: 0

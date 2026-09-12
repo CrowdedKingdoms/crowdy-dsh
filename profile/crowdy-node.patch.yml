@@ -1,0 +1,34 @@
+# Developer cockpit overlay: run the same plugins under a Node 22 `dsh web`
+# from a checkout of deepseek-harness that has this package in its workspace:
+#
+#   dsh --profile web --patch profile/crowdy-node.patch.yml
+#
+# Connection settings come from CROWDY_* environment variables (see
+# .env.example) or `$DSH_HOME/crowdy.json`. The mount must be a real (empty)
+# directory so the workspace picker accepts it: `CROWDY_MOUNT`, default
+# `$HOME/crowdy-mount`.
+#
+# Page-executed tools (draft_test, screenshot, ...) are registered but answer
+# "not connected": there is no Studio page in the cockpit.
+
+- id: fs-sandbox
+  disabled: true
+
+- id: file-reference-local
+  disabled: true
+
+- id: agent-presets
+  config:
+    default: crowdy
+    roots:
+      - path: !!js require('node:path').resolve(__dirname, '../presets')
+        trust: user
+
+- insert:
+    - id: crowdy-fs
+      name: '@crowdedkingdoms/crowdy-dsh/fs'
+      config:
+        root: !!js process.env.CROWDY_MOUNT ?? require('node:os').homedir() + '/crowdy-mount'
+
+    - id: crowdy-bridge
+      name: '@crowdedkingdoms/crowdy-dsh/bridge'
