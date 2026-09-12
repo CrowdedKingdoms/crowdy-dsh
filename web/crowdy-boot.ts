@@ -24,6 +24,9 @@
 import DshWorker from '@deepseek-ai/dsh-experimental-webworker-runtime/worker?worker'
 import { connectWorkerHost, IMAGE_FILE_NAME } from '@deepseek-ai/dsh-experimental-webworker-runtime/client'
 
+/** Injected by vite.crowdy.config.ts from the pinned upstream's onboarding-copy.ts. */
+declare const __CROWDY_WELCOME_NOTICE__: { namespace: string, field: string, version: string }
+
 // Hold the stock shell boot until our asynchronous handshake completes.
 // `connectWorkerHost` settles this same gate once index injections are applied.
 interface BootReadyGlobal {
@@ -176,12 +179,33 @@ async function buildOverlay(boot: BootMessage): Promise<string | undefined> {
   for (const [name, text] of Object.entries(boot.files ?? {})) {
     const clean = name.replace(/^\/+/, '')
     if (!clean || clean.includes('..')) continue
-    files.set(clean.startsWith('home/') ? clean : `home/${clean}`, encoder.encode(text))
+    const seeded = clean === 'settings.yaml' || clean === 'home/settings.yaml' ? preAcknowledgeWelcome(text) : text
+    files.set(clean.startsWith('home/') ? clean : `home/${clean}`, encoder.encode(seeded))
   }
   if (files.size === 0) return undefined
   console.info(`crowdy-dsh: overlay carries ${files.size} file(s) (${restored} restored)`)
   const archive = await gzip(packTar(files))
   return URL.createObjectURL(new Blob([archive as BlobPart], { type: 'application/gzip' }))
+}
+
+/**
+ * THE STOCK HARNESS SHOWS DEEPSEEK'S "INTERNAL TESTING NOTICE" ON FIRST BOOT and
+ * records the acknowledgement as `ui-onboarding.welcomeNoticeVersion` in the
+ * harness settings. Two reasons it must not reach a Crowdy Studio player: the
+ * player has already accepted Crowded Kingdoms' own provider-data notice in the
+ * pane, and the page re-seeds `settings.yaml` on every boot, so the stock
+ * acknowledgement would be overwritten and the modal would return each time.
+ *
+ * The version string is the pinned upstream's own constant, injected at build
+ * time by vite.crowdy.config.ts rather than copied, so a pin bump that changes the notice copy is acknowledged too
+ * -- the decision here is "Crowded Kingdoms' notice stands in for DeepSeek's",
+ * not "this one version of it". A page that already wrote the section wins.
+ */
+function preAcknowledgeWelcome(settingsYaml: string): string {
+  const { namespace, field, version } = __CROWDY_WELCOME_NOTICE__
+  if (new RegExp(`^${namespace}:`, 'm').test(settingsYaml)) return settingsYaml
+  const section = `${namespace}:\n  ${field}: ${JSON.stringify(version)}\n`
+  return `${settingsYaml.replace(/\n*$/, '\n')}${section}`
 }
 
 // ── host RPC ────────────────────────────────────────────────────────────────
