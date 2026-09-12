@@ -94,8 +94,5 @@
   },
   "engines": {
     "node": ">=22.19"
-  },
-  "crowdyDsh": {
-    "sdkSourceBranch": "feat/dsh-pane"
   }
 }
