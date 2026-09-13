@@ -17,16 +17,13 @@ export type {
   CrowdyFileUpsert,
   CrowdyProject,
   CrowdyProjectFile,
+  CrowdyProjectGitHub,
+  CrowdyProjectSource,
   CrowdyTarget,
 } from './crowdy/client.js'
 export { loadCrowdyConfig, describeMissing, CROWDY_CONFIG_FILENAME } from './crowdy/config.js'
 export type { CrowdyBootConfig } from './crowdy/config.js'
-export {
-  GitHubProjectStore,
-  StudioProjectStore,
-  selectProjectStore,
-  isSourcePath,
-} from './crowdy/project-store.js'
+export { CrowdyProjectStore, describeSource, isSourcePath, repoPathFor, snapshotOf } from './crowdy/project-store.js'
 export type { ProjectSnapshot, ProjectStore } from './crowdy/project-store.js'
 
 export { CrowdyAttachmentStore, imageDimensions } from './attachments/crowdy-attachment-store.js'

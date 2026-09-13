@@ -8,7 +8,7 @@
 
 import { CrowdyStudioClient } from '../crowdy/client.js'
 import { describeMissing, loadCrowdyConfig } from '../crowdy/config.js'
-import { selectProjectStore } from '../crowdy/project-store.js'
+import { CrowdyProjectStore, describeSource } from '../crowdy/project-store.js'
 
 async function main(): Promise<void> {
   const boot = loadCrowdyConfig()
@@ -26,12 +26,9 @@ async function main(): Promise<void> {
   })
   const projectId = boot.projectId
 
-  const selection = await selectProjectStore(client, projectId, {
-    githubFirst: boot.githubFirst ?? true,
-    warn: (message) => console.warn(`  warn: ${message}`),
-  })
-  console.log(`store: ${selection.store.kind} — ${selection.reason}`)
-  const snapshot = await selection.store.load()
+  const store = new CrowdyProjectStore(client, projectId)
+  const snapshot = await store.load()
+  console.log(`store: ${snapshot.source} — ${describeSource(snapshot)}`)
   console.log(`  ${snapshot.label}: ${snapshot.files.length} file(s)`)
 
   const project = await client.loadProject(projectId)

@@ -91,6 +91,8 @@ function harness(files: CrowdyProjectFile[] = []) {
     revision: '1',
     archived: false,
     files,
+    source: 'STUDIO',
+    github: null,
     updatedAt: '2026-01-01T00:00:00Z',
   }
   const api = new FakeApi(project)
@@ -101,7 +103,6 @@ function harness(files: CrowdyProjectFile[] = []) {
     projectId: 'proj-1',
     root: ROOT,
     appToken: 'token',
-    githubFirst: false,
     // Reads must not be served from a stale snapshot across assertions.
     snapshotTtlMs: 0,
   })
@@ -140,7 +141,6 @@ describe('CrowdyFileSystem', () => {
         root: ROOT,
         bridgeChannel: 'crowdy-dsh:test',
         bridgeNonce: 'n1',
-        githubFirst: false,
         snapshotTtlMs: 0,
       })
       fs.client = api as unknown as CrowdyFileSystem['client']

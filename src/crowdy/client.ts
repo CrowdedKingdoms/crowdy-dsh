@@ -33,15 +33,33 @@ export interface CrowdyProjectFile {
   updatedAt: string
 }
 
+/**
+ * Where a project's files are authored. Every project starts as `STUDIO`; its
+ * owner may bind a GitHub repository in Crowdy Studio, after which the
+ * repository is the working tree and `files` is the server's mirror of it at
+ * `github.sha`. GitHub is never required.
+ */
+export type CrowdyProjectSource = 'STUDIO' | 'GITHUB'
+
+export interface CrowdyProjectGitHub {
+  owner: string
+  repo: string
+  branch: string
+  /** Commit the mirror is at; every bound write presents it as `expectedCommitSha`. */
+  sha: string | null
+}
+
 export interface CrowdyProject {
   projectId: string
   appId: string
   ownerUserId: string
   name: string
-  /** Project-wide counter guarding every mutation; `expectedRevision` must equal it. */
+  /** Project-wide counter guarding every STUDIO mutation; `expectedRevision` must equal it. */
   revision: string
   archived: boolean
   files: CrowdyProjectFile[]
+  source: CrowdyProjectSource
+  github: CrowdyProjectGitHub | null
   updatedAt: string
 }
 
@@ -106,6 +124,11 @@ interface ProjectDto {
   revision: string
   archived: boolean
   updatedAt: string
+  source?: string | null
+  githubOwner?: string | null
+  githubRepo?: string | null
+  githubBranch?: string | null
+  githubSha?: string | null
   files: Array<{
     target: GeneratedTarget
     path: string
@@ -116,6 +139,7 @@ interface ProjectDto {
 }
 
 function toProject(dto: ProjectDto): CrowdyProject {
+  const bound = dto.source === 'GITHUB' && dto.githubOwner && dto.githubRepo && dto.githubBranch
   return {
     projectId: dto.projectId,
     appId: String(dto.appId),
@@ -124,6 +148,10 @@ function toProject(dto: ProjectDto): CrowdyProject {
     revision: String(dto.revision),
     archived: dto.archived,
     updatedAt: dto.updatedAt,
+    source: bound ? 'GITHUB' : 'STUDIO',
+    github: bound
+      ? { owner: dto.githubOwner!, repo: dto.githubRepo!, branch: dto.githubBranch!, sha: dto.githubSha ?? null }
+      : null,
     files: dto.files.map((file) => ({
       target: file.target as CrowdyTarget,
       path: file.path,
@@ -332,6 +360,11 @@ const PROJECT_FIELDS = `
   revision
   archived
   updatedAt
+  source
+  githubOwner
+  githubRepo
+  githubBranch
+  githubSha
   files {
     target
     path
