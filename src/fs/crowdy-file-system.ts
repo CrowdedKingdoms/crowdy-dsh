@@ -49,14 +49,12 @@ import {
   targetDirectories,
   toVirtualPath,
 } from '../crowdy/paths.js'
-import { selectProjectStore, type ProjectSnapshot, type ProjectStore } from '../crowdy/project-store.js'
+import { CrowdyProjectStore, describeSource, type ProjectSnapshot, type ProjectStore } from '../crowdy/project-store.js'
 import { ScratchStore } from './scratch-store.js'
 
 export type Config = Partial<CrowdyBootConfig> & {
   /** How long a project snapshot may be reused for reads, in milliseconds. */
   snapshotTtlMs?: number
-  /** How often the GitHub/Studio store choice is re-evaluated, in milliseconds. */
-  storeTtlMs?: number
 }
 
 /** Directories have no meaningful content version; guards only apply to files. */
@@ -131,10 +129,8 @@ export class CrowdyFileSystem extends FileSystem {
     password: z.string(),
     bridgeChannel: z.string(),
     bridgeNonce: z.string(),
-    githubFirst: z.boolean(),
     studioOrigin: z.string(),
     snapshotTtlMs: z.number().default(750),
-    storeTtlMs: z.number().default(60_000),
   }) as unknown as z<Config>
 
   /** Effective boot configuration (file + environment + row config). */
@@ -145,13 +141,11 @@ export class CrowdyFileSystem extends FileSystem {
   readonly scratch = new ScratchStore()
   private readonly root: string
   private readonly snapshotTtl: number
-  private readonly storeTtl: number
 
   /** Cached project snapshot; reads may reuse it briefly, mutations never do. */
   private snapshot: { project: ProjectSnapshot; at: number } | undefined
   private inflight: Promise<ProjectSnapshot> | undefined
-  private store: { store: ProjectStore; reason: string; at: number } | undefined
-  private storeInflight: Promise<ProjectStore> | undefined
+  private store: ProjectStore | undefined
   /** Per-path tail promise serializing each read-guard-write critical section. */
   private readonly locks = new Map<string, Promise<unknown>>()
   /** Listeners told when the project files changed through this backend. */
@@ -163,9 +157,8 @@ export class CrowdyFileSystem extends FileSystem {
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx)
-    const { snapshotTtlMs, storeTtlMs, ...overrides } = config
+    const { snapshotTtlMs, ...overrides } = config
     this.snapshotTtl = snapshotTtlMs ?? 750
-    this.storeTtl = storeTtlMs ?? 60_000
     this.boot = loadCrowdyConfig(overrides)
     this.root = normalizeAbsolute(this.boot.root ?? DEFAULT_ROOT)
     publishTokenToEnvironment(this.boot.appToken)
@@ -185,9 +178,9 @@ export class CrowdyFileSystem extends FileSystem {
     return this.root
   }
 
-  /** Human-readable description of where files currently come from. */
+  /** Human-readable description of where files currently come from (known after the first load). */
   get storeReason(): string | undefined {
-    return this.store?.reason
+    return this.snapshot ? describeSource(this.snapshot.project) : undefined
   }
 
   /** Point the backend at another project (the page switched projects). */
@@ -653,9 +646,8 @@ export class CrowdyFileSystem extends FileSystem {
         .then(() => {
           const missing = describeMissing(this.boot)
           if (missing) throw new FsError(missing, 'FS_IO_ERROR')
-          return this.currentStore()
+          return this.currentStore().load()
         })
-        .then((store) => store.load())
         .then((project) => {
           this.snapshot = { project, at: Date.now() }
           return project
@@ -682,27 +674,14 @@ export class CrowdyFileSystem extends FileSystem {
     return this.inflight
   }
 
-  /** Decide (and periodically re-decide) whether GitHub or Studio holds the files. */
-  private async currentStore(): Promise<ProjectStore> {
-    if (this.store && Date.now() - this.store.at < this.storeTtl) return this.store.store
-    if (!this.storeInflight) {
-      this.storeInflight = selectProjectStore(this.client, this.boot.projectId, {
-        githubFirst: this.boot.githubFirst ?? true,
-        warn: (message) => {
-          this.warn(message)
-        },
-      })
-        .then((selection) => {
-          const changed = this.store?.store.kind !== selection.store.kind
-          this.store = { ...selection, at: Date.now() }
-          if (changed) this.snapshot = undefined
-          return selection.store
-        })
-        .finally(() => {
-          this.storeInflight = undefined
-        })
-    }
-    return this.storeInflight
+  /**
+   * The store for the current project. Which path a write takes (Studio
+   * revision or GitHub commit) is decided per snapshot by the project's
+   * `source`, so there is nothing to re-decide here.
+   */
+  private currentStore(): ProjectStore {
+    if (!this.store) this.store = new CrowdyProjectStore(this.client, this.boot.projectId)
+    return this.store
   }
 
   private find(

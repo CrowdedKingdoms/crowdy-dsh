@@ -47,8 +47,6 @@ export interface CrowdyBootConfig {
   bridgeChannel?: string
   /** One-time secret the page put in the boot message; every bridge frame carries it. */
   bridgeNonce?: string
-  /** Prefer the bound GitHub repository as the file source of truth. */
-  githubFirst?: boolean
   /** Studio origin used to render wallet links in tool messages. */
   studioOrigin?: string
   /** OPFS scope for session persistence (browser only); see `./persist`. */
@@ -65,7 +63,6 @@ const ENV_KEYS: Record<keyof CrowdyBootConfig, string> = {
   root: 'CROWDY_MOUNT',
   bridgeChannel: 'CROWDY_BRIDGE_CHANNEL',
   bridgeNonce: 'CROWDY_BRIDGE_NONCE',
-  githubFirst: 'CROWDY_GITHUB_FIRST',
   studioOrigin: 'CROWDY_STUDIO_ORIGIN',
   persistScope: 'CROWDY_PERSIST_SCOPE',
 }
@@ -92,7 +89,7 @@ export function loadCrowdyConfig(overrides: Partial<CrowdyBootConfig> = {}): Cro
   const pick = <K extends keyof CrowdyBootConfig>(key: K): CrowdyBootConfig[K] | undefined => {
     const fromEnv = env[ENV_KEYS[key]]
     if (fromEnv !== undefined && fromEnv !== '') {
-      return (key === 'githubFirst' ? fromEnv === '1' || fromEnv === 'true' : fromEnv) as CrowdyBootConfig[K]
+      return fromEnv as CrowdyBootConfig[K]
     }
     if (overrides[key] !== undefined) return overrides[key]
     return file[key]
@@ -108,7 +105,6 @@ export function loadCrowdyConfig(overrides: Partial<CrowdyBootConfig> = {}): Cro
     root: pick('root'),
     bridgeChannel: pick('bridgeChannel'),
     bridgeNonce: pick('bridgeNonce'),
-    githubFirst: pick('githubFirst') ?? true,
     studioOrigin: pick('studioOrigin'),
     persistScope: pick('persistScope'),
   }

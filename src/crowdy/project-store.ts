@@ -1,23 +1,31 @@
 /**
- * Where a project's files live: the bound GitHub repository when the owner
- * bound one (GitHub is then the source of truth and Studio holds the deployable
- * mirror), otherwise the Crowdy Studio project itself.
+ * Where a project's files live, and how a batch of edits reaches them.
  *
- * Both stores present the same versioned bag of `(target, path, content)` so
- * the filesystem backend never learns which one it is talking to.
+ * Both sources present the same versioned bag of `(target, path, content)` so
+ * the filesystem backend never learns which one it is talking to:
+ *
+ *  - a STUDIO project is read and written through the Crowdy Studio project
+ *    API under its revision counter;
+ *  - a GITHUB project is READ the same way — its `files` are the server's
+ *    mirror of the bound repository at `github.sha` — and WRITTEN as commits:
+ *    one `crowdyStudioGitHubPutFile` / `DeleteFile` per changed file, each
+ *    carrying `expectedCommitSha` (the commit the previous one produced). The
+ *    server advances the mirror with every commit, so nothing is mirrored from
+ *    here; the harness and Monaco are always looking at one tree.
+ *
+ * A lost race is {@link CrowdyApiError} with `isRevisionConflict` either way
+ * (`CROWDY_STUDIO_REVISION_CONFLICT` or `GITHUB_STALE_SHA`); the filesystem
+ * reports `FS_STALE_VERSION` and the agent re-reads.
+ *
+ * Layout comes from the API (`crowdyStudioGitHubLayout`) at the commit being
+ * written to. This module does not parse `crowdy.json`; the API is the only
+ * grammar.
  *
  * @module @crowdedkingdoms/crowdy-dsh/crowdy/project-store
  */
 
 import { CrowdyApiError, CrowdyStudioClient } from './client.js'
-import type { CrowdyFileDelete, CrowdyFileUpsert, CrowdyProjectFile, CrowdyTarget } from './client.js'
-import {
-  layoutFromTree,
-  parseCrowdyJson,
-  repoPathToStudioFile,
-  studioFileToRepoPath,
-  type GitHubLayout,
-} from './github-layout.js'
+import type { CrowdyFileDelete, CrowdyFileUpsert, CrowdyProject, CrowdyProjectFile, CrowdyTarget } from './client.js'
 
 export interface ProjectSnapshot {
   /** Opaque store-wide version; every mutation must present the one it read. */
@@ -34,7 +42,6 @@ export interface ProjectBatch {
 }
 
 export interface ProjectStore {
-  readonly kind: 'studio' | 'github'
   load(): Promise<ProjectSnapshot>
   /**
    * Apply a batch against `snapshot`. A lost race throws {@link CrowdyApiError}
@@ -43,9 +50,19 @@ export interface ProjectStore {
   commit(snapshot: ProjectSnapshot, batch: ProjectBatch): Promise<ProjectSnapshot>
 }
 
-/** Crowdy Studio project files behind `crowdyStudioProject*`. */
-export class StudioProjectStore implements ProjectStore {
-  readonly kind = 'studio' as const
+interface ApiLayout {
+  commitSha: string
+  server: string
+  client: string | null
+}
+
+/**
+ * The one store. Which path a commit takes is decided by the snapshot it is
+ * applied to, which is decided by the project's `source` at load time.
+ */
+export class CrowdyProjectStore implements ProjectStore {
+  /** Layout per commit; commits are immutable so this never goes stale. */
+  private readonly layouts = new Map<string, ApiLayout>()
 
   constructor(
     private readonly client: CrowdyStudioClient,
@@ -54,192 +71,100 @@ export class StudioProjectStore implements ProjectStore {
 
   async load(): Promise<ProjectSnapshot> {
     const project = await this.client.loadProject(this.projectId)
-    return {
-      revision: project.revision,
-      files: project.files,
-      source: 'studio',
-      label: `Crowdy Studio project "${project.name}"`,
-    }
+    return snapshotOf(project)
   }
 
   async commit(snapshot: ProjectSnapshot, batch: ProjectBatch): Promise<ProjectSnapshot> {
+    if (snapshot.source === 'github') return this.commitToGitHub(snapshot, batch)
     const project = await this.client.saveFiles({
       projectId: this.projectId,
       expectedRevision: snapshot.revision,
       ...batch,
     })
-    return {
-      revision: project.revision,
-      files: project.files,
-      source: 'studio',
-      label: snapshot.label,
-    }
-  }
-}
-
-interface GitHubFileState {
-  sha: string
-  repoPath: string
-}
-
-/**
- * The bound GitHub repository, read through `crowdyStudioGitHubTree/File` and
- * written through `crowdyStudioGitHubPutFile` (Contents API, SHA-guarded).
- *
- * After every successful GitHub write the same batch is mirrored onto the
- * Studio project so a draft test or deploy compiles what the agent wrote. The
- * mirror is best-effort: GitHub already holds the truth, and a Studio revision
- * race is reported, not treated as a failed write.
- */
-export class GitHubProjectStore implements ProjectStore {
-  readonly kind = 'github' as const
-  private shas = new Map<string, GitHubFileState>()
-  private layout: GitHubLayout | undefined
-  /** Last mirror failure, surfaced once by the filesystem in its next result. */
-  mirrorWarning: string | undefined
-
-  constructor(
-    private readonly client: CrowdyStudioClient,
-    private readonly projectId: string,
-    private readonly repoLabel: string,
-    private readonly warn: (message: string) => void = () => undefined,
-  ) {}
-
-  private get scope() {
-    return { appId: this.client.appId, projectId: this.projectId }
+    return snapshotOf(project)
   }
 
-  async load(): Promise<ProjectSnapshot> {
-    await this.client.authenticate()
-    const entries = await this.client.github.tree(this.scope)
-    const crowdyJson = entries.find((entry) => entry.type === 'blob' && entry.path === 'crowdy.json')
-    let layout: GitHubLayout | null = null
-    if (crowdyJson) {
-      const file = await this.client.github.getFile({ ...this.scope, path: 'crowdy.json' })
-      layout = parseCrowdyJson(file.content)
-    }
-    this.layout = layout ?? layoutFromTree(entries)
-
-    const mapped: Array<{ repoPath: string; target: CrowdyTarget; path: string; sha: string | null }> = []
-    for (const entry of entries) {
-      if (entry.type !== 'blob') continue
-      const studio = repoPathToStudioFile(this.layout, entry.path)
-      if (!studio) continue
-      if (!isSourcePath(studio.path)) continue
-      mapped.push({ repoPath: entry.path, ...studio, sha: entry.sha })
-    }
-
-    const files: CrowdyProjectFile[] = []
-    const shas = new Map<string, GitHubFileState>()
-    // Small projects: fetch sequentially in modest parallel batches so a
-    // fleet-wide op limit is not tripped by one listing.
-    const batchSize = 4
-    for (let index = 0; index < mapped.length; index += batchSize) {
-      const slice = mapped.slice(index, index + batchSize)
-      const loaded = await Promise.all(
-        slice.map(async (entry) => {
-          const file = await this.client.github.getFile({ ...this.scope, path: entry.repoPath })
-          return { entry, file }
-        }),
-      )
-      for (const { entry, file } of loaded) {
-        shas.set(key(entry.target, entry.path), { sha: file.sha, repoPath: entry.repoPath })
-        files.push({
-          target: entry.target,
-          path: entry.path,
-          content: file.content,
-          revision: file.sha,
-          updatedAt: '',
-        })
-      }
-    }
-    this.shas = shas
-    files.sort((a, b) => (a.target === b.target ? a.path.localeCompare(b.path) : a.target.localeCompare(b.target)))
-    return {
-      revision: revisionOf(shas),
-      files,
-      source: 'github',
-      label: `GitHub ${this.repoLabel}`,
-    }
-  }
-
-  async commit(snapshot: ProjectSnapshot, batch: ProjectBatch): Promise<ProjectSnapshot> {
-    if (snapshot.revision !== revisionOf(this.shas)) {
-      throw new CrowdyApiError('The repository changed since it was read.', 'GITHUB_STALE_SHA')
-    }
-    if (batch.deletes?.length) {
+  private async commitToGitHub(snapshot: ProjectSnapshot, batch: ProjectBatch): Promise<ProjectSnapshot> {
+    const scope = { appId: this.client.appId, projectId: this.projectId }
+    let sha = snapshot.revision
+    if (!/^[0-9a-f]{40}$/.test(sha)) {
       throw new CrowdyApiError(
-        'Deleting files in a GitHub-bound project is not supported here; delete it on GitHub or in Crowdy Studio.',
-        'GITHUB_DELETE_UNSUPPORTED',
+        'The bound project has no mirror commit yet; refresh it from GitHub in Crowdy Studio.',
+        'GITHUB_NOT_BOUND',
       )
     }
-    const layout = this.layout ?? layoutFromTree([])
+    const layout = await this.layoutAt(scope, sha)
     for (const upsert of batch.upserts ?? []) {
-      const repoPath = studioFileToRepoPath(layout, upsert.target, upsert.path)
-      if (!repoPath) {
-        throw new CrowdyApiError(
-          `The bound repository has no ${upsert.target.toLowerCase()} root in crowdy.json, so ${upsert.path} has no place to go.`,
-          'GITHUB_PATH_INVALID',
-        )
-      }
-      const existing = this.shas.get(key(upsert.target, upsert.path))
+      const repoPath = repoPathFor(layout, upsert.target, upsert.path)
       const written = await this.client.github.putFile({
-        ...this.scope,
+        ...scope,
         path: repoPath,
         content: upsert.content,
-        message: `Crowdy Studio agent: ${existing ? 'update' : 'add'} ${repoPath}`,
-        ...(existing ? { sha: existing.sha } : {}),
+        message: `Crowdy Studio agent: update ${repoPath}`,
+        expectedCommitSha: sha,
       })
-      this.shas.set(key(upsert.target, upsert.path), { sha: written.sha, repoPath })
+      sha = written.commitSha ?? sha
     }
-
-    const files = snapshot.files.map((file) => ({ ...file }))
-    for (const upsert of batch.upserts ?? []) {
-      const index = files.findIndex((file) => file.target === upsert.target && file.path === upsert.path)
-      const state = this.shas.get(key(upsert.target, upsert.path))
-      const next: CrowdyProjectFile = {
-        target: upsert.target,
-        path: upsert.path,
-        content: upsert.content,
-        revision: state?.sha ?? '',
-        updatedAt: new Date().toISOString(),
-      }
-      if (index === -1) files.push(next)
-      else files[index] = next
+    for (const del of batch.deletes ?? []) {
+      const repoPath = repoPathFor(layout, del.target, del.path)
+      const status = await this.client.github.deleteFile({
+        ...scope,
+        path: repoPath,
+        message: `Crowdy Studio agent: delete ${repoPath}`,
+        expectedCommitSha: sha,
+      })
+      sha = status.githubSha ?? sha
     }
-
-    await this.mirrorToStudio(batch)
-
-    return { revision: revisionOf(this.shas), files, source: 'github', label: snapshot.label }
+    // The server advanced the mirror with each commit; read it back rather
+    // than guessing at the shape it produced.
+    return snapshotOf(await this.client.loadProject(this.projectId))
   }
 
-  /** Copy the batch onto the Studio project so builds see the same bytes. */
-  private async mirrorToStudio(batch: ProjectBatch): Promise<void> {
-    try {
-      const project = await this.client.loadProject(this.projectId)
-      await this.client.saveFiles({
-        projectId: this.projectId,
-        expectedRevision: project.revision,
-        ...batch,
-      })
-      this.mirrorWarning = undefined
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.mirrorWarning = `Saved to GitHub, but the Crowdy Studio mirror was not updated: ${message}. Pull from GitHub in Studio before testing.`
-      this.warn(this.mirrorWarning)
+  private async layoutAt(scope: { appId: string; projectId: string }, commitSha: string): Promise<ApiLayout> {
+    const cached = this.layouts.get(commitSha)
+    if (cached) return cached
+    const layout = await this.client.github.layout({ ...scope, commitSha })
+    if (this.layouts.size > 32) {
+      const [oldest] = this.layouts.keys()
+      if (oldest !== undefined) this.layouts.delete(oldest)
     }
+    this.layouts.set(commitSha, layout)
+    return layout
   }
 }
 
-function key(target: CrowdyTarget, path: string): string {
-  return `${target}:${path}`
+/** Repository path of a project file under the API-resolved layout. */
+export function repoPathFor(layout: Pick<ApiLayout, 'server' | 'client'>, target: CrowdyTarget, path: string): string {
+  const root = target === 'SERVER' ? layout.server : layout.client
+  if (root == null) {
+    throw new CrowdyApiError(
+      `The bound repository's crowdy.json has no ${target.toLowerCase()} directory, so ${path} has nowhere to go.`,
+      'GITHUB_PATH_INVALID',
+      'Add a "client" directory to crowdy.json on the bound branch.',
+    )
+  }
+  const base = root.replace(/^\/+|\/+$/g, '')
+  const rel = path.replace(/^\/+/, '')
+  if (!base || base === '.') return rel
+  return `${base}/${rel}`
 }
 
-function revisionOf(shas: Map<string, GitHubFileState>): string {
-  return [...shas.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${v.sha}`)
-    .join(';')
+export function snapshotOf(project: CrowdyProject): ProjectSnapshot {
+  if (project.source === 'GITHUB' && project.github) {
+    const label = `${project.github.owner}/${project.github.repo}@${project.github.branch}`
+    return {
+      revision: project.github.sha ?? '',
+      files: project.files,
+      source: 'github',
+      label: `GitHub ${label}`,
+    }
+  }
+  return {
+    revision: project.revision,
+    files: project.files,
+    source: 'studio',
+    label: `Crowdy Studio project "${project.name}"`,
+  }
 }
 
 /** Crowdy Studio stores only `Cargo.toml` and `.rs` files under `src/`. */
@@ -247,39 +172,9 @@ export function isSourcePath(path: string): boolean {
   return path === 'Cargo.toml' || (path.startsWith('src/') && path.endsWith('.rs'))
 }
 
-export interface StoreSelection {
-  store: ProjectStore
-  /** Why this store was chosen, for the system prompt and tool messages. */
-  reason: string
-}
-
-/**
- * Choose the store for a project: GitHub when the project is bound to a
- * connected repository and the caller prefers it, otherwise Studio files.
- */
-export async function selectProjectStore(
-  client: CrowdyStudioClient,
-  projectId: string,
-  options: { githubFirst: boolean; warn?: (message: string) => void },
-): Promise<StoreSelection> {
-  if (options.githubFirst) {
-    try {
-      const status = await client.github.status({ appId: client.appId, projectId })
-      if (status.configured && status.connected && status.owner && status.repo) {
-        const label = `${status.owner}/${status.repo}@${status.branch ?? 'default'}`
-        return {
-          store: new GitHubProjectStore(client, projectId, label, options.warn),
-          reason: `The project is bound to GitHub (${label}); the repository is the source of truth and Studio mirrors it.`,
-        }
-      }
-    } catch (error) {
-      options.warn?.(
-        `GitHub status unavailable, falling back to Studio files: ${error instanceof Error ? error.message : String(error)}`,
-      )
-    }
-  }
-  return {
-    store: new StudioProjectStore(client, projectId),
-    reason: 'The project is not bound to a GitHub repository; Crowdy Studio project files are the source of truth.',
-  }
+/** Why a snapshot's files live where they do, for the system prompt and tool messages. */
+export function describeSource(snapshot: ProjectSnapshot): string {
+  return snapshot.source === 'github'
+    ? `The project is bound to ${snapshot.label.replace(/^GitHub /, '')}; the repository is the working tree and every write is a commit on it. Monaco in Crowdy Studio sees the same commit.`
+    : 'The project is not bound to a GitHub repository; Crowdy Studio project files are the working tree.'
 }

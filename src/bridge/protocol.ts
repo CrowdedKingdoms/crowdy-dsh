@@ -11,7 +11,15 @@
  * @module @crowdedkingdoms/crowdy-dsh/bridge-protocol
  */
 
-export const CROWDY_BRIDGE_PROTOCOL_VERSION = 2 as const
+/**
+ * v3 (crowdy-dsh 0.3 / CrowdyJS 17): a project carries `source` and
+ * `githubSha`. A GITHUB project's files are the server's mirror of the bound
+ * repository at that commit; the worker writes them as commits carrying
+ * `expectedCommitSha = githubSha` and mirrors nothing back to Studio itself.
+ * `page.project` / `page.saved` re-announce the commit whenever it moves so the
+ * worker's next write carries the current one.
+ */
+export const CROWDY_BRIDGE_PROTOCOL_VERSION = 3 as const
 
 export type BridgeSide = 'page' | 'worker'
 
@@ -72,12 +80,18 @@ export interface BuildResult {
   screenshot?: ScreenshotResult
 }
 
+export type ProjectSource = 'STUDIO' | 'GITHUB'
+
 export interface ProjectSummary {
   projectId: string
   name: string
   kind: string
   updatedAt: string
-  /** Bound repository label when the project is GitHub-bound. */
+  /** Where the files are authored. GITHUB means the repository is the working tree. */
+  source: ProjectSource
+  /** Commit the GITHUB project mirrors; null for a STUDIO project. */
+  githubSha: string | null
+  /** Bound repository label (`owner/repo@branch`) when the project is GitHub-bound. */
   github?: string
 }
 
@@ -128,11 +142,18 @@ export type BridgeMethod = keyof BridgeRequestMap
 /** Events the page emits. */
 export interface PageEventMap {
   /** Page joined the channel or reloaded its state. */
-  'page.hello': { appId: string; projectId: string | null; appToken?: string }
+  'page.hello': {
+    appId: string
+    projectId: string | null
+    appToken?: string
+    source?: ProjectSource
+    githubSha?: string | null
+  }
   'page.token': { appToken: string }
-  'page.project': { projectId: string | null }
+  /** The open project changed, or a GITHUB project's commit moved (bind, refresh, save). */
+  'page.project': { projectId: string | null; source?: ProjectSource; githubSha?: string | null }
   /** The page saved the project itself; cached snapshots are stale. */
-  'page.saved': { revision?: string }
+  'page.saved': { revision?: string; githubSha?: string | null }
   /** Shared context the model may read under `context/`. */
   'page.context': {
     observation?: unknown
