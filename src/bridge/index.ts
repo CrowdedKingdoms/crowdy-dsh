@@ -156,6 +156,9 @@ export class CrowdyBridge extends Service {
       }),
       client.on('page.project', (payload) => {
         if (payload.projectId) fs.setProject(payload.projectId)
+        // Same project, moved commit (bind, refresh, or a Studio save on a
+        // bound project): the snapshot is behind the mirror.
+        fs.invalidate()
       }),
       client.on('page.saved', () => {
         fs.invalidate()
