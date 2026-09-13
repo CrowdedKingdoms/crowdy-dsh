@@ -16,9 +16,6 @@
   },
   "type": "module",
   "description": "DeepSeek Harness plugins whose filesystem is a Crowdy Studio project (a bound GitHub repository when the owner chose one), plus the packed in-browser harness image Crowdy Studio embeds.",
-  "crowdyDsh": {
-    "sdkSourceBranch": "michael/github-optional-sot"
-  },
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
