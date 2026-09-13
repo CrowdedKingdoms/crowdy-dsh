@@ -75,7 +75,6 @@
         # The image root is /dsh; the stock workspace directory becomes the
         # project mount so a session's cwd IS the project.
         root: /dsh/workspace
-        githubFirst: true
 
     - id: attachment-crowdy
       name: '@crowdedkingdoms/crowdy-dsh/attachments'

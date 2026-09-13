@@ -44,6 +44,23 @@ Consumers (`the-construct` and the Crowded Kingdoms games) install this package
 as a devDependency and copy `dist/dsh-web/` under `public/dsh/` at build time.
 They pin the tier-matching version, never a caret.
 
+## Where the files come from is the project's `source`, not a preference
+
+`CrowdyStudioProject.source` (ck-api v2.0.0 / CrowdyJS 17) is `STUDIO` until
+the owner binds a repository in Crowdy Studio and `GITHUB` while bound. Reads
+never change: `crowdyStudioProject` returns the files either way (for a bound
+project they are the server's mirror at `githubSha`). Writes follow the source
+— `CrowdyProjectStore.commit` uses the files-only Studio save for STUDIO and
+one `crowdyStudioGitHubPutFile` / `DeleteFile` per changed file, carrying
+`expectedCommitSha`, for GITHUB. Do not mirror anything back to Studio from
+here (the server does, in the same transaction as the commit), do not parse
+`crowdy.json` (the API's `crowdyStudioGitHubLayout` is the grammar), and do
+not add a "prefer GitHub" switch: `CROWDY_GITHUB_FIRST` was removed in 0.3.0
+because the server decides. GitHub is never required of a modder. The worker
+holds the player's **app token** only; the API scopes every GitHub field to
+projects that token's user owns, so no identity session is needed and none may
+ever cross the bridge.
+
 ## The protocol has two copies
 
 `src/bridge/protocol.ts` is mirrored by CrowdyJS `src/crowdy-dsh/protocol.ts`
@@ -66,7 +83,7 @@ the pin deliberately: the plugin APIs are experimental.
 (report-only until the baseline is clean) and CodeQL. Dependabot targets
 `dev`, weekly, minors and patches grouped, majors and `@crowdedkingdoms/*`
 ignored. A change to `src/bridge/` or `src/fs/` (where the player's app token
-and the GitHub-first project writes live) requests the code owner and runs the
+and the GitHub commit writes live) requests the code owner and runs the
 `security-review` subagent first, with the findings in the PR body. The worker
 holds the player's app token in memory only; it is never written to a seed
 file or persisted to OPFS, and that is a property tests assert.

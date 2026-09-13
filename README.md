@@ -31,7 +31,7 @@ game page (the-construct)                 iframe /dsh/index.html            Web 
 
 | Seam | Stock | Here |
 |---|---|---|
-| `ctx.fs` | `dsh-fs-sandbox` over the local disk | [`./fs`](src/fs/crowdy-file-system.ts): the project. GitHub-bound projects read/write the bound repository (SHA-guarded) and mirror to Studio; unbound projects use Studio files (`expectedRevision`). `captures/` and `context/` are in-memory scratch dirs the page fills. |
+| `ctx.fs` | `dsh-fs-sandbox` over the local disk | [`./fs`](src/fs/crowdy-file-system.ts): the project. Reads are always the project's files (`crowdyStudioProject`); for a project bound to GitHub those are the server's mirror of the repository at `githubSha`. Writes go by `source`: a STUDIO project through the files-only save under `expectedRevision`, a GITHUB project as one commit per changed file (`crowdyStudioGitHubPutFile` / `DeleteFile` carrying `expectedCommitSha`). Nothing is mirrored from here; the server advances the mirror with each commit, so Monaco and the agent look at one tree. Layout comes from `crowdyStudioGitHubLayout`; this package does not parse `crowdy.json`. GitHub is never required. `captures/` and `context/` are in-memory scratch dirs the page fills. |
 | `ctx.attachments` | `dsh-attachment-local` (sharp) | [`./attachments`](src/attachments/crowdy-attachment-store.ts): in-memory, header-sniffed dimensions; the browser worker has no native image codec. |
 | agent preset | `standard` | [`presets/crowdy`](presets/crowdy/agent.cordis.yml): file tools, in-memory `glob`/`grep`, `sdk_lookup`, and the Studio tools below. No shell, no web, no subagents. |
 | page link | — | [`./bridge`](src/bridge/index.ts): `ctx.crowdyBridge`, a `BroadcastChannel` to the Studio page ([protocol](src/bridge/protocol.ts)). |
@@ -47,7 +47,7 @@ The iframe posts `{type:'crowdy-dsh:ready'}`; the page answers with:
 iframe.contentWindow.postMessage({
   type: 'crowdy-dsh:boot',
   files: {
-    'crowdy.json': JSON.stringify({ graphqlUrl, appId, projectId, bridgeChannel, bridgeNonce, githubFirst: true, root: '/dsh/workspace', persistScope }),
+    'crowdy.json': JSON.stringify({ graphqlUrl, appId, projectId, bridgeChannel, bridgeNonce, root: '/dsh/workspace', persistScope }),
     'settings.yaml': `llm-deepseek:\n  apiKeyEnv: CROWDY_APP_TOKEN\n  baseURL: ${modelBaseUrl}\n  thinking: disabled\n  models: [...]\nagent-default-model:\n  provider: deepseek-official\n  model: ${defaultModel}\n`,
   },
   nonce: bridgeNonce,    // one-time secret; every bridge frame carries it
@@ -170,6 +170,7 @@ dsh --profile web --patch ./profile/crowdy-node.patch.yml
 - Experimental upstream packages (`webworker-runtime`, `webworker-packer`) are
   private and may change; the tag is pinned and the build fails loud.
 - Attachments are in memory: a reload keeps the session text but not the pixels.
-- GitHub-bound projects cannot delete files from here (the Contents API path
-  is not wrapped); the Studio panel or GitHub can.
+- A multi-file write on a GitHub-bound project is one commit per file; a
+  stale race part-way through leaves the earlier commits on the branch and the
+  filesystem reports `FS_STALE_VERSION` for the rest. Re-read and retry.
 - The developer cockpit needs a real, empty mount directory (`CROWDY_MOUNT`).
