@@ -1,6 +1,6 @@
 {
   "name": "@crowdedkingdoms/crowdy-dsh",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": false,
   "license": "MIT",
   "repository": {
@@ -15,7 +15,7 @@
     "access": "public"
   },
   "type": "module",
-  "description": "DeepSeek Harness plugins whose filesystem is a Crowdy Studio project (GitHub-bound when possible), plus the packed in-browser harness image Crowdy Studio embeds.",
+  "description": "DeepSeek Harness plugins whose filesystem is a Crowdy Studio project (a bound GitHub repository when the owner chose one), plus the packed in-browser harness image Crowdy Studio embeds.",
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
@@ -84,7 +84,7 @@
     "@deepseek-ai/schemastery": "workspace:*"
   },
   "devDependencies": {
-    "@crowdedkingdoms/crowdyjs": "16.0.0-test.1",
+    "@crowdedkingdoms/crowdyjs": "17.0.1-test.1",
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
