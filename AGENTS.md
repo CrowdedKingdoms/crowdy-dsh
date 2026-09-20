@@ -93,7 +93,8 @@ file or persisted to OPFS, and that is a property tests assert.
 - Fetch before you read: `git fetch origin && git rev-list --left-right --count origin/dev...HEAD`.
 - Create a feature branch off `origin/dev`; commit as you go; open a PR to `dev`
   and merge it yourself with `gh api repos/CrowdedKingdoms/crowdy-dsh/pulls/<n>/merge -X PUT -f merge_method=merge`
-  (`gh pr merge` refuses at preflight under the ruleset).
+  (`gh pr merge` refuses at preflight under the ruleset). `test` and `prod` need
+  an admin to merge (same `update` lock as the other three-branch repos).
 - Requires Node 22.19+ and pnpm via corepack. `bash scripts/checkout-upstream.sh`
   then `bash scripts/build-image.sh` builds, tests (82 `node:test` cases inside the
   upstream workspace), scrubs, stamps (`dist/dsh-web/BUILD.json`) and stages the
