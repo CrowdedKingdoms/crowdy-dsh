@@ -19,7 +19,13 @@
  * `page.project` / `page.saved` re-announce the commit whenever it moves so the
  * worker's next write carries the current one.
  */
-export const CROWDY_BRIDGE_PROTOCOL_VERSION = 3 as const
+/**
+ * v4 (crowdy-dsh 0.4 / CrowdyJS 17.7, DN-10): grid requests. `grid.context`
+ * names the grid the open project is bound to; `grid.programRun` and
+ * `grid.programStatus` run a JS grid program from a project file inside it.
+ * The page answers them only when its game offers a grid capability.
+ */
+export const CROWDY_BRIDGE_PROTOCOL_VERSION = 4 as const
 
 export type BridgeSide = 'page' | 'worker'
 
@@ -122,6 +128,26 @@ export interface GameObservationResult {
 }
 
 /** Method names with their parameter and result shapes. */
+/** The grid the open project is bound to (v4). */
+export interface GridContext {
+  appId: string
+  gridId: string
+  low: { x: string; y: string; z: string }
+  high: { x: string; y: string; z: string }
+  owned: boolean
+  channels: Array<{ groupId: string; name: string }>
+  sessions: Array<{ sessionId: string; name: string | null; status: string }>
+}
+
+/** One JS grid program the page is running (v4). */
+export interface GridProgramStatus {
+  path: string
+  running: boolean
+  startedAt?: string
+  lastError?: string
+  log: string[]
+}
+
 export interface BridgeRequestMap {
   'studio.screenshot': { params: { label?: string }; result: ScreenshotResult }
   'studio.draftTest': { params: Record<string, never>; result: BuildResult }
@@ -133,6 +159,9 @@ export interface BridgeRequestMap {
   'studio.projectOpen': { params: { projectId: string }; result: ProjectOpenResult }
   'studio.projectCreate': { params: ProjectCreateParams; result: ProjectOpenResult }
   'game.observe': { params: Record<string, never>; result: GameObservationResult }
+  'grid.context': { params: Record<string, never>; result: { grid: GridContext | null } }
+  'grid.programRun': { params: { path: string; stop?: boolean }; result: { program: GridProgramStatus } }
+  'grid.programStatus': { params: Record<string, never>; result: { programs: GridProgramStatus[] } }
 }
 
 export type BridgeMethod = keyof BridgeRequestMap
