@@ -35,7 +35,7 @@ game page (the-construct)                 iframe /dsh/index.html            Web 
 | `ctx.attachments` | `dsh-attachment-local` (sharp) | [`./attachments`](src/attachments/crowdy-attachment-store.ts): in-memory, header-sniffed dimensions; the browser worker has no native image codec. |
 | agent preset | `standard` | [`presets/crowdy`](presets/crowdy/agent.cordis.yml): file tools, in-memory `glob`/`grep`, `sdk_lookup`, and the Studio tools below. No shell, no web, no subagents. |
 | page link | — | [`./bridge`](src/bridge/index.ts): `ctx.crowdyBridge`, a `BroadcastChannel` to the Studio page ([protocol](src/bridge/protocol.ts)). |
-| tools | — | [`./tools`](src/tools/index.ts): `draft_test`, `deploy_live` (approval-gated), `screenshot`, `runtime_status`, `client_logs`, `game_observe`, `project_list/open/create`. The page executes them with the player's authority. |
+| tools | — | [`./tools`](src/tools/index.ts): `draft_test`, `deploy_live` (approval-gated), `screenshot`, `runtime_status`, `client_logs`, `game_observe`, `project_list/open/create`, and (bridge v4) `grid_context`, `grid_program_run`, `grid_program_status` for JS grid programs in the project's grid. The page executes them with the player's authority. |
 | model route | pi-ai | `llm-deepseek` (direct fetch; pi-ai is a stub in the worker) pointed at the tier model endpoint via `settings.yaml`. |
 | persistence | disk | [`./persist`](src/persist/index.ts): mirrors `home/sessions`, `home/storages`, `settings.yaml` to OPFS; the page restores them as a boot overlay. |
 
