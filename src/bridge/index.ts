@@ -17,7 +17,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { CrowdyFileSystem } from '../fs/crowdy-file-system.js'
 import type { ScratchFile } from '../fs/scratch-store.js'
 import { BridgeClient, BridgeError } from './client.js'
-import type { ScreenshotResult, StudioDiagnostic, RuntimeStatus } from './protocol.js'
+import type { GridContext, ScreenshotResult, StudioDiagnostic, RuntimeStatus } from './protocol.js'
 
 export { BridgeClient, BridgeError } from './client.js'
 export * from './protocol.js'
@@ -96,6 +96,7 @@ export class CrowdyBridge extends Service {
     clientLogs?: string[]
     diagnostics?: StudioDiagnostic[]
     runtime?: RuntimeStatus[]
+    grid?: GridContext
     note?: string
   }): string[] {
     const written: string[] = []
@@ -107,6 +108,7 @@ export class CrowdyBridge extends Service {
     if (payload.clientLogs) put('client-logs.txt', payload.clientLogs.join('\n'))
     if (payload.diagnostics) put('diagnostics.json', JSON.stringify(payload.diagnostics, null, 2))
     if (payload.runtime) put('runtime.json', JSON.stringify(payload.runtime, null, 2))
+    if (payload.grid) put('grid.json', JSON.stringify(payload.grid, null, 2))
     if (payload.note) put('note.txt', payload.note)
     return written
   }
