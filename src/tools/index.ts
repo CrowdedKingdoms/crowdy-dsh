@@ -131,10 +131,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   async function runBuild(mode: 'draft' | 'live', exec: ToolRunContext): Promise<{ text: string; imagePath?: string }> {
     let result: BuildResult
     try {
+      // The page asks the player before either (up to a minute), then builds.
       result = await bridge.client.request(
         mode === 'draft' ? 'studio.draftTest' : 'studio.deployLive',
         {},
-        { signal: exec.signal, timeoutMs: buildTimeout },
+        { signal: exec.signal, timeoutMs: buildTimeout + 60_000 },
       )
     } catch (error) {
       bridgeFailure(error)
@@ -176,10 +177,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       description:
         'Compile the current Crowdy Studio project and run it as a DRAFT on the player\'s own grid (server target) and browser (client target). ' +
         'Returns compiler diagnostics, the build log tail and runtime status; a screenshot of the game is captured when the client target ran. ' +
-        'Use this after every meaningful edit. Nothing here is visible to other players.',
+        'A draft deploys the project\'s mod to the grid, so players there who trust the player run it too: the page asks the player first ' +
+        'every time, and a decline comes back as an error. Test after meaningful edits, not after every keystroke.',
       parameters: {},
       output: buildOutput,
-      timeoutMs: buildTimeout + 5_000,
+      timeoutMs: buildTimeout + 65_000,
       execute: (_args, exec) => runBuild('draft', exec),
       presentCall: (): ToolCallView => ({ card: 'generic', title: 'Draft test', kind: 'execute' }),
     }),
@@ -195,7 +197,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         reason: { type: 'string', required: true, description: 'One sentence the player will read when asked to approve the deploy.' },
       },
       output: buildOutput,
-      timeoutMs: buildTimeout + 60_000,
+      timeoutMs: buildTimeout + 125_000,
       async execute(args, exec) {
         const approval = ctx.get('approval')
         if (!approval || !exec.agent) {
