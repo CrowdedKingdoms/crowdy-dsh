@@ -88,6 +88,12 @@ and the GitHub commit writes live) requests the code owner and runs the
 holds the player's app token in memory only; it is never written to a seed
 file or persisted to OPFS, and that is a property tests assert.
 
+A draft test is not private: on ck-exec it deploys the project's mod to the grid
+like a live deploy, so players there who trust the player run it. The page
+(CrowdyJS 18.0.2+) asks the player before `studio.draftTest` as before
+`studio.deployLive`, and `draft_test` says so to the model and waits for that
+answer (0.4.3). Do not describe a draft as invisible to other players.
+
 ## Working here
 
 - Fetch before you read: `git fetch origin && git rev-list --left-right --count origin/dev...HEAD`.
@@ -96,7 +102,7 @@ file or persisted to OPFS, and that is a property tests assert.
   (`gh pr merge` refuses at preflight under the ruleset). `test` and `prod` need
   an admin to merge (same `update` lock as the other three-branch repos).
 - Requires Node 22.19+ and pnpm via corepack. `bash scripts/checkout-upstream.sh`
-  then `bash scripts/build-image.sh` builds, tests (82 `node:test` cases inside the
+  then `bash scripts/build-image.sh` builds, tests (87 `node:test` cases inside the
   upstream workspace), scrubs, stamps (`dist/dsh-web/BUILD.json`) and stages the
   npm package in `dist/npm/`.
 - Keep a journal of what you learn; update this file and `README.md` when the
