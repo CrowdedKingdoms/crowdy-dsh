@@ -131,10 +131,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   async function runBuild(mode: 'draft' | 'live', exec: ToolRunContext): Promise<{ text: string; imagePath?: string }> {
     let result: BuildResult
     try {
+      // The page asks the player before either (up to a minute), then builds.
       result = await bridge.client.request(
         mode === 'draft' ? 'studio.draftTest' : 'studio.deployLive',
         {},
-        { signal: exec.signal, timeoutMs: buildTimeout },
+        { signal: exec.signal, timeoutMs: buildTimeout + 60_000 },
       )
     } catch (error) {
       bridgeFailure(error)
@@ -176,10 +177,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       description:
         'Compile the current Crowdy Studio project and run it as a DRAFT on the player\'s own grid (server target) and browser (client target). ' +
         'Returns compiler diagnostics, the build log tail and runtime status; a screenshot of the game is captured when the client target ran. ' +
-        'Use this after every meaningful edit. Nothing here is visible to other players.',
+        'A draft deploys the project\'s mod to the grid, so players there who trust the player run it too: the page asks the player first ' +
+        'every time, and a decline comes back as an error. Test after meaningful edits, not after every keystroke.',
       parameters: {},
       output: buildOutput,
-      timeoutMs: buildTimeout + 5_000,
+      timeoutMs: buildTimeout + 65_000,
       execute: (_args, exec) => runBuild('draft', exec),
       presentCall: (): ToolCallView => ({ card: 'generic', title: 'Draft test', kind: 'execute' }),
     }),
@@ -195,7 +197,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         reason: { type: 'string', required: true, description: 'One sentence the player will read when asked to approve the deploy.' },
       },
       output: buildOutput,
-      timeoutMs: buildTimeout + 60_000,
+      timeoutMs: buildTimeout + 125_000,
       async execute(args, exec) {
         const approval = ctx.get('approval')
         if (!approval || !exec.agent) {
@@ -411,6 +413,77 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         }
       },
       presentCall: (args): ToolCallView => ({ card: 'generic', title: `Create project "${args.name}"`, kind: 'other' }),
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'grid_context',
+      description:
+        'The grid this project is bound to: its chunk box, whether the player owns it, and its channels and sessions. ' +
+        'Code on a grid may only address chunks inside the box (spatial sends originate there and may reach past it), post to these channels, and host these sessions; read this before writing code that touches the world.',
+      parameters: {},
+      output: TEXT_OUTPUT,
+      async execute(_args, exec) {
+        try {
+          const result = await bridge.client.request('grid.context', {}, { signal: exec.signal })
+          if (!result.grid) return { text: 'This project is not bound to a grid the game can see.' }
+          bridge.putContext({ grid: result.grid })
+          return { text: JSON.stringify(result.grid, null, 2) }
+        } catch (error) {
+          bridgeFailure(error)
+        }
+      },
+      presentCall: (): ToolCallView => ({ card: 'generic', title: 'Grid context', kind: 'read' }),
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'grid_program_run',
+      description:
+        'Run a JavaScript grid program from a project file inside the grid, or stop it. The game loads the file\'s saved content into a network-less sandbox ' +
+        'where `createGridProgramClient(port)` gives it the full CrowdyJS SDK confined to the grid. Save the file first; the result carries the program\'s recent console lines.',
+      parameters: {
+        path: { type: 'string', required: true, description: 'Project file path, e.g. "programs/fountain.js".' },
+        stop: { type: 'boolean', description: 'Stop the program instead of (re)starting it.' },
+      },
+      output: TEXT_OUTPUT,
+      async execute(args, exec) {
+        try {
+          const result = await bridge.client.request(
+            'grid.programRun',
+            { path: args.path, ...(args.stop ? { stop: true } : {}) },
+            { signal: exec.signal, timeoutMs: 60_000 },
+          )
+          const p = result.program
+          const state = p.running ? 'running' : 'stopped'
+          const tail = p.log.length ? `\n${p.log.slice(-40).join('\n')}` : ''
+          return { text: `${p.path}: ${state}${p.lastError ? ` (last error: ${p.lastError})` : ''}${tail}` }
+        } catch (error) {
+          bridgeFailure(error)
+        }
+      },
+      presentCall: (args): ToolCallView => ({ card: 'generic', title: `${args.stop ? 'Stop' : 'Run'} ${args.path}`, kind: 'other' }),
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'grid_program_status',
+      description: 'Which JavaScript grid programs the game is running for this grid, with their last error and recent console lines.',
+      parameters: {},
+      output: TEXT_OUTPUT,
+      async execute(_args, exec) {
+        try {
+          const result = await bridge.client.request('grid.programStatus', {}, { signal: exec.signal })
+          if (!result.programs.length) return { text: 'No grid programs are running.' }
+          return { text: JSON.stringify(result.programs, null, 2).slice(0, 12_000) }
+        } catch (error) {
+          bridgeFailure(error)
+        }
+      },
+      presentCall: (): ToolCallView => ({ card: 'generic', title: 'Grid programs', kind: 'read' }),
     }),
   )
 }
