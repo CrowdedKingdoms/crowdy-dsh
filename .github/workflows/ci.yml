@@ -152,7 +152,7 @@ jobs:
       # builds its lib/, so bump the suffix whenever the list changes.
       - name: Restore the upstream build
         id: upstream-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             deepseek-harness/node_modules
