@@ -92,7 +92,7 @@ jobs:
       - name: Update npm
         run: npm install -g npm@latest
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: crowdy-dsh-npm
           path: staged
@@ -161,15 +161,17 @@ jobs:
         run: npm publish --provenance --access public --tag "$DIST_TAG"
 
       # Ask the REGISTRY what it now serves, rather than trusting what we uploaded.
-      # Thirty tries at 15 s, as CrowdyJS waits: 0.4.0-dev.1 (9.5 MB) took about five
-      # minutes to appear, and a one-minute wait failed a publish that had succeeded.
+      # 0.4.0-dev.1 (9.5 MB) took about five minutes to appear and prod/v0.4.5 about
+      # eight, so this waits up to fifteen. Past that it warns rather than fails: the
+      # Publish step's exit already says npm accepted the package, and every run that
+      # failed here (2026-09-21, prod/v0.4.5) had published.
       - name: What the registry now serves
         env:
           PUBLISH_VERSION: ${{ steps.resolve.outputs.publish_version }}
           DIST_TAG: ${{ steps.resolve.outputs.dist_tag }}
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 60); do
             if npm view "@crowdedkingdoms/crowdy-dsh@$PUBLISH_VERSION" version >/dev/null 2>&1; then
               npm view "@crowdedkingdoms/crowdy-dsh@$PUBLISH_VERSION" crowdyDsh.build.upstream.tag crowdyDsh.build.crowdyjs.version
               served="$(npm view "@crowdedkingdoms/crowdy-dsh@$DIST_TAG" version)"
@@ -178,5 +180,4 @@ jobs:
             fi
             sleep 15
           done
-          echo "::error::$PUBLISH_VERSION did not appear on the registry"
-          exit 1
+          echo "::warning::npm accepted $PUBLISH_VERSION but does not serve it after 15 minutes; check \`npm view @crowdedkingdoms/crowdy-dsh dist-tags\` before re-pinning consumers"
