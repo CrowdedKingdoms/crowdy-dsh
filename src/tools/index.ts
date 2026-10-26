@@ -23,6 +23,7 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type { CrowdyBridge } from '../bridge/index.js'
 import { BridgeError } from '../bridge/client.js'
 import type { BuildResult, ScreenshotResult, StudioDiagnostic } from '../bridge/protocol.js'
+import { assertPlaybookPage, isWritableGamePath } from '../crowdy/game-paths.js'
 
 export interface Config {
   /** Deadline for a draft test or live deploy, in milliseconds. */
@@ -484,6 +485,61 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         }
       },
       presentCall: (): ToolCallView => ({ card: 'generic', title: 'Grid programs', kind: 'read' }),
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'read_playbook',
+      description:
+        'Read one page of the MMO Anything playbook shipped with this game. ' +
+        'page is a relative markdown path such as playbook/authoring-loop.md or skills/mmo-scene/SKILL.md. ' +
+        'Only those shipped pages are readable.',
+      parameters: {
+        page: { type: 'string', required: true, description: 'Relative markdown path under the shipped playbook.' },
+      },
+      output: TEXT_OUTPUT,
+      async execute(args, exec) {
+        const page = assertPlaybookPage(args.page)
+        try {
+          const result = await bridge.client.request('studio.readPlaybook', { page }, { signal: exec.signal, timeoutMs: 15_000 })
+          return { text: result.text }
+        } catch (error) {
+          bridgeFailure(error)
+        }
+      },
+      presentCall: (args): ToolCallView => ({ card: 'generic', title: `Playbook ${args.page}`, kind: 'read' }),
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'write_game_file',
+      description:
+        'Commit one game file to the bound GitHub branch. Allowed paths: src/scenes/*.mjs, src/scenes/*.js, src/scenes/*.ts, model/catalog.mjs, and files under exec/construct. ' +
+        'The write uses the branch commit the project last read. A draft test does not rebuild the hosted game; scene changes appear on the hosted page only after the game is published again. ' +
+        'Until then, look at them in the author\'s dev server.',
+      parameters: {
+        path: { type: 'string', required: true, description: 'Repository path, such as src/scenes/holodeck.mjs.' },
+        content: { type: 'string', required: true, description: 'Full new contents of the file.' },
+      },
+      output: TEXT_OUTPUT,
+      async execute(args, exec) {
+        if (!isWritableGamePath(args.path)) {
+          throw new Error('That path is not a scene, the catalog, or a world-hub file.')
+        }
+        try {
+          const result = await bridge.client.request(
+            'studio.putGameFile',
+            { path: args.path, content: args.content },
+            { signal: exec.signal, timeoutMs: 30_000 },
+          )
+          return { text: `Committed ${args.path} at ${result.commitSha}. The hosted bundle is unchanged until the game is published again.` }
+        } catch (error) {
+          bridgeFailure(error)
+        }
+      },
+      presentCall: (args): ToolCallView => ({ card: 'generic', title: `Write ${args.path}`, kind: 'edit' }),
     }),
   )
 }

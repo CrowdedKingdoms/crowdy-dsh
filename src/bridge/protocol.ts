@@ -162,6 +162,8 @@ export interface BridgeRequestMap {
   'grid.context': { params: Record<string, never>; result: { grid: GridContext | null } }
   'grid.programRun': { params: { path: string; stop?: boolean }; result: { program: GridProgramStatus } }
   'grid.programStatus': { params: Record<string, never>; result: { programs: GridProgramStatus[] } }
+  'studio.readPlaybook': { params: { page: string }; result: { text: string } }
+  'studio.putGameFile': { params: { path: string; content: string }; result: { commitSha: string } }
 }
 
 export type BridgeMethod = keyof BridgeRequestMap
