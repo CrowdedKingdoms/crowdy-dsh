@@ -21,8 +21,10 @@ function harness() {
   const requests: Array<{ method: string; timeoutMs?: number }> = []
   const bridge = {
     client: {
-      async request(method: string, _params: unknown, options: { timeoutMs?: number }) {
+      async request(method: string, params: unknown, options: { timeoutMs?: number }) {
         requests.push({ method, timeoutMs: options.timeoutMs })
+        if (method === 'studio.putGameFile') return { path: (params as { path: string }).path }
+        if (method === 'studio.commitGameFile') return { commitSha: 'abc123' }
         return { ok: true, mode: 'draft', summary: 'ok', diagnostics: [], buildLog: '', runtime: [] }
       },
     },
@@ -55,5 +57,30 @@ describe('draft_test', () => {
     await tools.get('draft_test')!.execute({}, { signal: undefined })
     assert.deepEqual(requests, [{ method: 'studio.draftTest', timeoutMs: 61_000 }])
     assert.ok((tools.get('draft_test')!.timeoutMs ?? 0) > 61_000)
+  })
+})
+
+describe('game files', () => {
+  it('writes a draft and commits it only from commit_game_file', async () => {
+    const { ctx, tools, requests } = harness()
+    await apply(ctx as never, { buildTimeoutMs: 1_000, autoScreenshot: false })
+    const write = tools.get('write_game_file')
+    const commit = tools.get('commit_game_file')
+    assert.ok(write && commit)
+    assert.match(write.description, /draft working copy/)
+    assert.match(write.description, /commit_game_file/)
+    assert.doesNotMatch(write.description, /Commit one game file/)
+    const drafted = await write.execute(
+      { path: 'src/scenes/holodeck.mjs', content: 'export {}\n' },
+      { signal: undefined },
+    )
+    assert.match((drafted as { text: string }).text, /Drafted src\/scenes\/holodeck\.mjs/)
+    assert.doesNotMatch((drafted as { text: string }).text, /Committed/)
+    const committed = await commit.execute({ path: 'src/scenes/holodeck.mjs' }, { signal: undefined })
+    assert.match((committed as { text: string }).text, /Committed src\/scenes\/holodeck\.mjs at abc123/)
+    assert.deepEqual(
+      requests.map((call) => call.method),
+      ['studio.putGameFile', 'studio.commitGameFile'],
+    )
   })
 })

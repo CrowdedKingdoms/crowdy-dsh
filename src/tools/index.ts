@@ -516,9 +516,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     defineTool({
       name: 'write_game_file',
       description:
-        'Commit one game file to the bound GitHub branch. Allowed paths: src/scenes/*.mjs, src/scenes/*.js, src/scenes/*.ts, model/catalog.mjs, and files under exec/construct. ' +
-        'The write uses the branch commit the project last read. A draft test does not rebuild the hosted game; scene changes appear on the hosted page only after the game is published again. ' +
-        'Until then, look at them in the author\'s dev server.',
+        'Write one game file into the draft working copy. Allowed paths: src/scenes/*.mjs, src/scenes/*.js, src/scenes/*.ts, model/catalog.mjs, and files under exec/construct. ' +
+        'The draft updates the local game before any GitHub commit. Call commit_game_file to push that draft to the bound branch. Do not commit on every edit.',
       parameters: {
         path: { type: 'string', required: true, description: 'Repository path, such as src/scenes/holodeck.mjs.' },
         content: { type: 'string', required: true, description: 'Full new contents of the file.' },
@@ -529,17 +528,48 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           throw new Error('That path is not a scene, the catalog, or a world-hub file.')
         }
         try {
-          const result = await bridge.client.request(
+          await bridge.client.request(
             'studio.putGameFile',
             { path: args.path, content: args.content },
             { signal: exec.signal, timeoutMs: 30_000 },
           )
-          return { text: `Committed ${args.path} at ${result.commitSha}. The hosted bundle is unchanged until the game is published again.` }
+          return {
+            text: `Drafted ${args.path}. The local game updates from that working copy. It is not on GitHub until commit_game_file.`,
+          }
         } catch (error) {
           bridgeFailure(error)
         }
       },
-      presentCall: (args): ToolCallView => ({ card: 'generic', title: `Write ${args.path}`, kind: 'edit' }),
+      presentCall: (args): ToolCallView => ({ card: 'generic', title: `Draft ${args.path}`, kind: 'edit' }),
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'commit_game_file',
+      description:
+        'Commit one drafted game file to the bound GitHub branch. The bytes are the draft working copy from write_game_file. ' +
+        'Allowed paths match write_game_file. Call this only when the player asks to commit.',
+      parameters: {
+        path: { type: 'string', required: true, description: 'Repository path previously written with write_game_file.' },
+      },
+      output: TEXT_OUTPUT,
+      async execute(args, exec) {
+        if (!isWritableGamePath(args.path)) {
+          throw new Error('That path is not a scene, the catalog, or a world-hub file.')
+        }
+        try {
+          const result = await bridge.client.request(
+            'studio.commitGameFile',
+            { path: args.path },
+            { signal: exec.signal, timeoutMs: 30_000 },
+          )
+          return { text: `Committed ${args.path} at ${result.commitSha}.` }
+        } catch (error) {
+          bridgeFailure(error)
+        }
+      },
+      presentCall: (args): ToolCallView => ({ card: 'generic', title: `Commit ${args.path}`, kind: 'edit' }),
     }),
   )
 }
