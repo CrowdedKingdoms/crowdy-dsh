@@ -22,8 +22,12 @@
       "default": "./lib/index.js"
     },
     "./fs": {
-      "types": "./lib/types/fs/crowdy-file-system.d.ts",
-      "default": "./lib/fs/crowdy-file-system.js"
+      "types": "./lib/types/fs/entry.d.ts",
+      "default": "./lib/fs/entry.js"
+    },
+    "./fs-game": {
+      "types": "./lib/types/fs/game-entry.d.ts",
+      "default": "./lib/fs/game-entry.js"
     },
     "./search": {
       "types": "./lib/types/search/search-tools.d.ts",
@@ -36,6 +40,18 @@
     "./tools": {
       "types": "./lib/types/tools/index.d.ts",
       "default": "./lib/tools/index.js"
+    },
+    "./tools-game": {
+      "types": "./lib/types/tools/game.d.ts",
+      "default": "./lib/tools/game.js"
+    },
+    "./persona-game": {
+      "types": "./lib/types/persona/game.d.ts",
+      "default": "./lib/persona/game.js"
+    },
+    "./skills-game": {
+      "types": "./lib/types/skills/dock.d.ts",
+      "default": "./lib/skills/dock.js"
     },
     "./attachments": {
       "types": "./lib/types/attachments/crowdy-attachment-store.d.ts",

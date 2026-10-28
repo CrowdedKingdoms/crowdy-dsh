@@ -76,6 +76,24 @@
         # project mount so a session's cwd IS the project.
         root: /dsh/workspace
 
+    # Mounts only when crowdy.json says studioMode game. The mod filesystem
+    # above returns without mounting in that boot, so exactly one ctx.fs exists.
+    - id: crowdy-fs-game
+      name: '@crowdedkingdoms/crowdy-dsh/fs-game'
+      config:
+        root: /dsh/workspace
+
+    - id: crowdy-tools-game
+      name: '@crowdedkingdoms/crowdy-dsh/tools-game'
+
+    - id: crowdy-persona-game
+      name: '@crowdedkingdoms/crowdy-dsh/persona-game'
+
+    # Registers mmo-dock-scene and mmo-dock-rules when this boot is game mode.
+    # The catalog the model sees comes from tool-skill on the crowdy preset.
+    - id: crowdy-skills-game
+      name: '@crowdedkingdoms/crowdy-dsh/skills-game'
+
     - id: attachment-crowdy
       name: '@crowdedkingdoms/crowdy-dsh/attachments'
       config:

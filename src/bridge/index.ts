@@ -15,6 +15,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-agent'
 
 import { CrowdyFileSystem } from '../fs/crowdy-file-system.js'
+import { GameFileSystem } from '../fs/game-file-system.js'
 import type { ScratchFile } from '../fs/scratch-store.js'
 import { BridgeClient, BridgeError } from './client.js'
 import type { GridContext, ScreenshotResult, StudioDiagnostic, RuntimeStatus } from './protocol.js'
@@ -49,17 +50,20 @@ export class CrowdyBridge extends Service {
   }) as unknown as z<Config>
 
   readonly client: BridgeClient
-  readonly fs: CrowdyFileSystem
+  readonly fs: CrowdyFileSystem | GameFileSystem
   private captureCounter = 0
   private readonly disposers: Array<() => void> = []
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'crowdyBridge')
     const fs = ctx.fs
-    if (!(fs instanceof CrowdyFileSystem)) {
-      throw new Error('crowdy-bridge: ctx.fs must be the Crowdy filesystem backend (@crowdedkingdoms/crowdy-dsh/fs).')
+    if (!(fs instanceof CrowdyFileSystem) && !(fs instanceof GameFileSystem)) {
+      throw new Error(
+        'crowdy-bridge: ctx.fs must be the mod filesystem (@crowdedkingdoms/crowdy-dsh/fs) or the game filesystem (@crowdedkingdoms/crowdy-dsh/fs-game).',
+      )
     }
     this.fs = fs
+    if (fs instanceof GameFileSystem) fs.attachPage(this)
     this.client = new BridgeClient({
       channel: config.channel ?? fs.boot.bridgeChannel,
       nonce: config.nonce ?? fs.boot.bridgeNonce,

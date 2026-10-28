@@ -60,27 +60,25 @@ describe('draft_test', () => {
   })
 })
 
-describe('game files', () => {
-  it('writes a draft and commits it only from commit_game_file', async () => {
-    const { ctx, tools, requests } = harness()
+describe('mod mode', () => {
+  it('does not register the repository commit tool', async () => {
+    const { ctx, tools } = harness()
     await apply(ctx as never, { buildTimeoutMs: 1_000, autoScreenshot: false })
-    const write = tools.get('write_game_file')
-    const commit = tools.get('commit_game_file')
-    assert.ok(write && commit)
-    assert.match(write.description, /draft working copy/)
-    assert.match(write.description, /commit_game_file/)
-    assert.doesNotMatch(write.description, /Commit one game file/)
-    const drafted = await write.execute(
-      { path: 'src/scenes/holodeck.mjs', content: 'export {}\n' },
-      { signal: undefined },
-    )
-    assert.match((drafted as { text: string }).text, /Drafted src\/scenes\/holodeck\.mjs/)
-    assert.doesNotMatch((drafted as { text: string }).text, /Committed/)
-    const committed = await commit.execute({ path: 'src/scenes/holodeck.mjs' }, { signal: undefined })
-    assert.match((committed as { text: string }).text, /Committed src\/scenes\/holodeck\.mjs at abc123/)
-    assert.deepEqual(
-      requests.map((call) => call.method),
-      ['studio.putGameFile', 'studio.commitGameFile'],
-    )
+    assert.equal(tools.has('draft_test'), true)
+    assert.equal(tools.has('commit_game_file'), false)
+    assert.equal(tools.has('write_game_file'), false)
+  })
+
+  it('mounts nothing when the boot is the game pair', async () => {
+    const previous = process.env.CROWDY_STUDIO_MODE
+    process.env.CROWDY_STUDIO_MODE = 'game'
+    try {
+      const { ctx, tools } = harness()
+      await apply(ctx as never, { buildTimeoutMs: 1_000, autoScreenshot: false })
+      assert.equal(tools.has('draft_test'), false)
+    } finally {
+      if (previous === undefined) delete process.env.CROWDY_STUDIO_MODE
+      else process.env.CROWDY_STUDIO_MODE = previous
+    }
   })
 })

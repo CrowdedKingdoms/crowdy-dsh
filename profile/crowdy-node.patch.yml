@@ -30,5 +30,19 @@
       config:
         root: !!js process.env.CROWDY_MOUNT ?? require('node:os').homedir() + '/crowdy-mount'
 
+    - id: crowdy-fs-game
+      name: '@crowdedkingdoms/crowdy-dsh/fs-game'
+      config:
+        root: !!js process.env.CROWDY_MOUNT ?? require('node:os').homedir() + '/crowdy-mount'
+
+    - id: crowdy-tools-game
+      name: '@crowdedkingdoms/crowdy-dsh/tools-game'
+
+    - id: crowdy-persona-game
+      name: '@crowdedkingdoms/crowdy-dsh/persona-game'
+
+    - id: crowdy-skills-game
+      name: '@crowdedkingdoms/crowdy-dsh/skills-game'
+
     - id: crowdy-bridge
       name: '@crowdedkingdoms/crowdy-dsh/bridge'

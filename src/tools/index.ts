@@ -23,7 +23,7 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type { CrowdyBridge } from '../bridge/index.js'
 import { BridgeError } from '../bridge/client.js'
 import type { BuildResult, ScreenshotResult, StudioDiagnostic } from '../bridge/protocol.js'
-import { assertPlaybookPage, isWritableGamePath } from '../crowdy/game-paths.js'
+import { activeStudioMode } from '../crowdy/config.js'
 
 export interface Config {
   /** Deadline for a draft test or live deploy, in milliseconds. */
@@ -96,6 +96,7 @@ function formatBuild(result: BuildResult, root: string): string {
 }
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
+  if (activeStudioMode() === 'game') return
   const bridge: CrowdyBridge = ctx.crowdyBridge
   const fs = bridge.fs
   const buildTimeout = config.buildTimeoutMs ?? 180_000
@@ -485,91 +486,6 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         }
       },
       presentCall: (): ToolCallView => ({ card: 'generic', title: 'Grid programs', kind: 'read' }),
-    }),
-  )
-
-  ctx.tools.register(
-    defineTool({
-      name: 'read_playbook',
-      description:
-        'Read one page of the MMO Anything playbook shipped with this game. ' +
-        'page is a relative markdown path such as playbook/authoring-loop.md or skills/mmo-scene/SKILL.md. ' +
-        'Only those shipped pages are readable.',
-      parameters: {
-        page: { type: 'string', required: true, description: 'Relative markdown path under the shipped playbook.' },
-      },
-      output: TEXT_OUTPUT,
-      async execute(args, exec) {
-        const page = assertPlaybookPage(args.page)
-        try {
-          const result = await bridge.client.request('studio.readPlaybook', { page }, { signal: exec.signal, timeoutMs: 15_000 })
-          return { text: result.text }
-        } catch (error) {
-          bridgeFailure(error)
-        }
-      },
-      presentCall: (args): ToolCallView => ({ card: 'generic', title: `Playbook ${args.page}`, kind: 'read' }),
-    }),
-  )
-
-  ctx.tools.register(
-    defineTool({
-      name: 'write_game_file',
-      description:
-        'Write one game file into the draft working copy. Allowed paths: src/scenes/*.mjs, src/scenes/*.js, src/scenes/*.ts, model/catalog.mjs, and files under exec/construct. ' +
-        'The draft updates the local game before any GitHub commit. Call commit_game_file to push that draft to the bound branch. Do not commit on every edit.',
-      parameters: {
-        path: { type: 'string', required: true, description: 'Repository path, such as src/scenes/holodeck.mjs.' },
-        content: { type: 'string', required: true, description: 'Full new contents of the file.' },
-      },
-      output: TEXT_OUTPUT,
-      async execute(args, exec) {
-        if (!isWritableGamePath(args.path)) {
-          throw new Error('That path is not a scene, the catalog, or a world-hub file.')
-        }
-        try {
-          await bridge.client.request(
-            'studio.putGameFile',
-            { path: args.path, content: args.content },
-            { signal: exec.signal, timeoutMs: 30_000 },
-          )
-          return {
-            text: `Drafted ${args.path}. The local game updates from that working copy. It is not on GitHub until commit_game_file.`,
-          }
-        } catch (error) {
-          bridgeFailure(error)
-        }
-      },
-      presentCall: (args): ToolCallView => ({ card: 'generic', title: `Draft ${args.path}`, kind: 'edit' }),
-    }),
-  )
-
-  ctx.tools.register(
-    defineTool({
-      name: 'commit_game_file',
-      description:
-        'Commit one drafted game file to the bound GitHub branch. The bytes are the draft working copy from write_game_file. ' +
-        'Allowed paths match write_game_file. Call this only when the player asks to commit.',
-      parameters: {
-        path: { type: 'string', required: true, description: 'Repository path previously written with write_game_file.' },
-      },
-      output: TEXT_OUTPUT,
-      async execute(args, exec) {
-        if (!isWritableGamePath(args.path)) {
-          throw new Error('That path is not a scene, the catalog, or a world-hub file.')
-        }
-        try {
-          const result = await bridge.client.request(
-            'studio.commitGameFile',
-            { path: args.path },
-            { signal: exec.signal, timeoutMs: 30_000 },
-          )
-          return { text: `Committed ${args.path} at ${result.commitSha}.` }
-        } catch (error) {
-          bridgeFailure(error)
-        }
-      },
-      presentCall: (args): ToolCallView => ({ card: 'generic', title: `Commit ${args.path}`, kind: 'edit' }),
     }),
   )
 }

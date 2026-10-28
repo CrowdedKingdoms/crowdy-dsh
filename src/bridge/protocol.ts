@@ -165,6 +165,12 @@ export interface BridgeRequestMap {
   'studio.readPlaybook': { params: { page: string }; result: { text: string } }
   'studio.putGameFile': { params: { path: string; content: string }; result: { path: string } }
   'studio.commitGameFile': { params: { path: string }; result: { commitSha: string } }
+  'studio.listRepo': {
+    params: { path: string }
+    result: { entries: Array<{ name: string; type: 'file' | 'directory' }> }
+  }
+  'studio.readRepoFile': { params: { path: string }; result: { content: string } }
+  'studio.listDirty': { params: Record<string, never>; result: { paths: string[] } }
 }
 
 export type BridgeMethod = keyof BridgeRequestMap
@@ -208,7 +214,7 @@ export interface PageEventMap {
 /** Events the worker emits. */
 export interface WorkerEventMap {
   'worker.ready': { root: string; store?: string }
-  'worker.fileChanged': { target: 'SERVER' | 'CLIENT'; path: string }
+  'worker.fileChanged': { target: 'SERVER' | 'CLIENT' | 'REPO'; path: string }
   'worker.warning': { message: string }
   /** Ask the editor to reveal a file, e.g. from a diagnostic the model cited. */
   'worker.openFile': { target: 'SERVER' | 'CLIENT'; path: string; line?: number }
