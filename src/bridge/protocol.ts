@@ -272,6 +272,7 @@ export interface BridgeRequestMap {
   /** `binary` lists requested paths that exist but are not text. */
   'draft.read': { params: { paths: string[] }; result: { files: DraftFileText[]; missing: string[]; binary: string[] } }
   'draft.write': { params: { path: string; content: string; precondition?: DraftPrecondition }; result: DraftWriteResult }
+  /** No harness tool deletes yet (dsh-fs has no remove); this is the guarded channel when one does. */
   'draft.delete': {
     params: { path: string; precondition?: { kind: 'ifHash'; hash: string } }
     result: { path: string; previousHash: string; revision: number }
