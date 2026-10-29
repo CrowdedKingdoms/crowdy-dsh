@@ -37,6 +37,8 @@ const DENYLIST = [
   'infra-control-plane',
   'crowd-altar',
   'Crowdy-Games',
+  'mmo-anything',
+  'crewrift',
   'MessageType.hpp',
   'wire-protocol-reference',
   'P2P_SECRET',

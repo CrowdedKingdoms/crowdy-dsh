@@ -67,9 +67,11 @@ rsync -a --delete \
   "$here/" "$target/"
 
 # The shipped preset root is the only one the worker mounts; our preset rides in it.
-preset_root="$upstream/packages/preset/agent-presets/presets/crowdy"
-rm -rf "$preset_root"
-cp -R "$here/presets/crowdy" "$preset_root"
+for preset in "$here"/presets/*/; do
+  preset_root="$upstream/packages/preset/agent-presets/presets/$(basename "$preset")"
+  rm -rf "$preset_root"
+  cp -R "$preset" "$preset_root"
+done
 
 # The page bootstrap and its Vite config live beside the stock ones.
 cp "$here/web/crowdy-boot.ts" "$upstream/apps/web/src/crowdy-boot.ts"

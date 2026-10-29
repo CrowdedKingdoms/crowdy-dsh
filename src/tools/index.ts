@@ -23,7 +23,6 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type { CrowdyBridge } from '../bridge/index.js'
 import { BridgeError } from '../bridge/client.js'
 import type { BuildResult, ScreenshotResult, StudioDiagnostic } from '../bridge/protocol.js'
-import { activeStudioMode } from '../crowdy/config.js'
 
 export interface Config {
   /** Deadline for a draft test or live deploy, in milliseconds. */
@@ -32,6 +31,11 @@ export interface Config {
   screenshotTimeoutMs?: number
   /** Take a screenshot automatically after a draft test that started the client target. */
   autoScreenshot?: boolean
+  /**
+   * Register only these tools. The game editor's preset reuses the page tools
+   * (screenshot, game_observe, client_logs) without the mod build tools.
+   */
+  only?: string[]
 }
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -43,6 +47,7 @@ export const Config: z<Config> = z.object({
   buildTimeoutMs: z.number().default(180_000),
   screenshotTimeoutMs: z.number().default(15_000),
   autoScreenshot: z.boolean().default(true),
+  only: z.array(z.string()),
 }) as unknown as z<Config>
 
 const TEXT_OUTPUT = {
@@ -96,12 +101,18 @@ function formatBuild(result: BuildResult, root: string): string {
 }
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
-  if (activeStudioMode() === 'game') return
   const bridge: CrowdyBridge = ctx.crowdyBridge
   const fs = bridge.fs
   const buildTimeout = config.buildTimeoutMs ?? 180_000
   const screenshotTimeout = config.screenshotTimeoutMs ?? 15_000
   const autoScreenshot = config.autoScreenshot ?? true
+  const only = config.only && config.only.length > 0 ? new Set(config.only) : null
+  const tools = {
+    register(tool: Parameters<typeof ctx.tools.register>[0]): void {
+      if (only && !only.has((tool as { name: string }).name)) return
+      ctx.tools.register(tool)
+    },
+  }
 
   /** Persist a capture under `captures/` and turn it into an image block when a store exists. */
   async function attachCapture(shot: ScreenshotResult): Promise<{ path: string; blocks: ContentBlock[]; note: string }> {
@@ -173,7 +184,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     render: (_args: unknown, value: { text: string; imagePath?: string }): ContentBlock[] => [{ type: 'text', text: value.text }],
   } as const
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'draft_test',
       description:
@@ -189,7 +200,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'deploy_live',
       description:
@@ -227,7 +238,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'screenshot',
       description:
@@ -275,7 +286,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'runtime_status',
       description: 'Current status of the project\'s SERVER and CLIENT modules: saved vs running revision, phase, and the latest runtime logs.',
@@ -305,7 +316,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'client_logs',
       description: 'Recent `crowdy::log` output from the CLIENT module running in the player\'s browser, plus browser-side runtime errors.',
@@ -326,7 +337,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'game_observe',
       description:
@@ -347,7 +358,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'project_list',
       description: 'List the player\'s Crowdy Studio projects in this app and which one is open in the editor (and mounted here).',
@@ -369,7 +380,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'project_open',
       description: 'Open another of the player\'s projects in Crowdy Studio and mount it here; subsequent file tools read and write that project.',
@@ -390,7 +401,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'project_create',
       description:
@@ -418,7 +429,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'grid_context',
       description:
@@ -440,7 +451,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'grid_program_run',
       description:
@@ -470,7 +481,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     }),
   )
 
-  ctx.tools.register(
+  tools.register(
     defineTool({
       name: 'grid_program_status',
       description: 'Which JavaScript grid programs the game is running for this grid, with their last error and recent console lines.',

@@ -12,9 +12,8 @@
 #   tool-fs-search         — glob/grep spawn ripgrep through `ctx.subprocess`,
 #                            deliberately NOT through `ctx.fs`. The Crowdy
 #                            search plugin registers the same names in memory.
-#   tool-jobs, skill-filesystem — background jobs and directory discovery walk
-#                        local roots. tool-skill stays: the game plugin registers
-#                        dock skills in memory, and this row publishes the catalog.
+#   tool-jobs, skill-*     — background jobs and skill discovery walk local roots.
+#                            The game editor's preset (`crowdy-game`) has skills.
 #   tool-web               — the platform's model endpoint forbids provider web
 #                            plugins; the harness gets no browser either.
 #   delegation             — subagents are a later cut (each one costs the
@@ -129,10 +128,6 @@
         tailChars: 1024
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
-
-# Catalog plus the `skill` loader. Bodies come from crowdy-skills-game, not from disk.
-- id: tool-skill
-  name: '@deepseek-ai/dsh-tool-skill'
 
 - id: tool-ask-user
   name: '@deepseek-ai/dsh-tool-ask-user'

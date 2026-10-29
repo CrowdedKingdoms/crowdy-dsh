@@ -1,0 +1,143 @@
+# The `crowdy-game` agent preset: the game editor. Its filesystem is the draft
+# of the bound game repository, which the page owns (`ctx.fs` is the game
+# backend when the boot says `studioMode: game`; settings.yaml then makes this
+# preset the default). Nothing here names a game: what a particular game
+# wants is its own STUDIO.md and the skills its playbook lists.
+#
+# Left out, as in the `crowdy` preset, and for the same reasons: tool-bash /
+# tool-pwsh (no shell), tool-fs-search (spawns ripgrep), tool-jobs and
+# skill-filesystem (walk local disks), tool-web, delegation. Also left out:
+# the mod build tools (draft_test, deploy_live, grid programs) and the
+# crowdy-compute-sdk index, which belong to mods.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    suffix: The game repository draft is mounted at {{cwd}}.
+    prefix: >-
+      You are the Crowdy Studio agent, powered by the {{model}} model. You help
+      a player build their game: the files mounted at `{{cwd}}` are the game's
+      own repository, as a draft that only this player sees.
+
+
+      Read a file before you change it. A write changes the draft, never
+      GitHub. The player's world reloads what the game can preview from the
+      draft; call `preview_status` after a change to see whether it took, and
+      fix what it reports before you say it works.
+
+
+      Nothing reaches the repository until the player asks you to commit. Then
+      call `commit_game_files` with a message that says what changed; the
+      player approves it here and confirms it on the page. Never commit on your
+      own initiative.
+
+
+      You have no shell: you cannot install packages, run builds or tests,
+      start servers or deploy. When a change needs one of those, say exactly
+      what the player should run and stop. Do not invent command output.
+
+
+      The game's own guidance comes first: its STUDIO.md, when it has one, is
+      in your instructions, and its skills are in the skill catalog. Load the
+      skill that matches before you change that part of the game, and read the
+      playbook pages it names with `read_playbook`. `captures/` and `context/`
+      hold screenshots and observations the page shares; they are not part of
+      the repository. Keep edits small and explain what you changed in one or
+      two sentences.
+
+# The game's dock guidance, not its developer notes: a repository's AGENTS.md
+# is written for an agent with a shell and a checkout, which this one is not.
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 32768
+    instructionFileCandidates: [STUDIO.md]
+    localInstructionFileCandidates: []
+
+# ── files, search, page tools ───────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search-crowdy
+  name: '@crowdedkingdoms/crowdy-dsh/search'
+  config:
+    globMaxResults: 100
+    grepMaxMatches: 250
+    grepMaxLineBytes: 2000
+
+# The page tools the game editor shares with the mod editor.
+- id: crowdy-tools
+  name: '@crowdedkingdoms/crowdy-dsh/tools'
+  config:
+    screenshotTimeoutMs: 15000
+    autoScreenshot: false
+    only: [screenshot, game_observe, client_logs]
+
+# commit_game_files, preview_status, read_playbook.
+- id: crowdy-game-tools
+  name: '@crowdedkingdoms/crowdy-dsh/game-tools'
+  config:
+    commitTimeoutMs: 180000
+
+# The skills the game's playbook lists, loaded through the page.
+- id: crowdy-playbook-skills
+  name: '@crowdedkingdoms/crowdy-dsh/playbook-skills'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── plan mode ───────────────────────────────────────────────────────────────
+
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: '@deepseek-ai/dsh-plan-mode'
+      config:
+        section: |
+          You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the player switches the session mode. Imperative language to implement changes means plan the implementation, not execute it.
+
+          Explore first: read the game's files, its STUDIO.md and the skill that matches the task, so the plan follows the game's own structure. Do not write files and do not commit while planning.
+
+          When ready, call exit_plan_mode with the complete plan markdown, starting with a # title, as the only and final tool call in that response.
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'

@@ -9,6 +9,9 @@
 
 export { CrowdyFileSystem, default, versionOf } from './fs/crowdy-file-system.js'
 export type { Config } from './fs/crowdy-file-system.js'
+export { GameFileSystem } from './fs/game-file-system.js'
+export { isStudioFileSystem } from './fs/studio-fs.js'
+export type { StudioFileSystem } from './fs/studio-fs.js'
 export { ScratchStore } from './fs/scratch-store.js'
 
 export { CrowdyApiError, CrowdyStudioClient } from './crowdy/client.js'

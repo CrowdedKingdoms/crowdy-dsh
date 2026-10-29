@@ -21,10 +21,8 @@ function harness() {
   const requests: Array<{ method: string; timeoutMs?: number }> = []
   const bridge = {
     client: {
-      async request(method: string, params: unknown, options: { timeoutMs?: number }) {
+      async request(method: string, _params: unknown, options: { timeoutMs?: number }) {
         requests.push({ method, timeoutMs: options.timeoutMs })
-        if (method === 'studio.putGameFile') return { path: (params as { path: string }).path }
-        if (method === 'studio.commitGameFile') return { commitSha: 'abc123' }
         return { ok: true, mode: 'draft', summary: 'ok', diagnostics: [], buildLog: '', runtime: [] }
       },
     },
@@ -60,25 +58,18 @@ describe('draft_test', () => {
   })
 })
 
-describe('mod mode', () => {
-  it('does not register the repository commit tool', async () => {
+describe('tool selection', () => {
+  it('registers every mod tool by default and none of the game tools', async () => {
     const { ctx, tools } = harness()
     await apply(ctx as never, { buildTimeoutMs: 1_000, autoScreenshot: false })
     assert.equal(tools.has('draft_test'), true)
-    assert.equal(tools.has('commit_game_file'), false)
-    assert.equal(tools.has('write_game_file'), false)
+    assert.equal(tools.has('deploy_live'), true)
+    assert.equal(tools.has('commit_game_files'), false)
   })
 
-  it('mounts nothing when the boot is the game pair', async () => {
-    const previous = process.env.CROWDY_STUDIO_MODE
-    process.env.CROWDY_STUDIO_MODE = 'game'
-    try {
-      const { ctx, tools } = harness()
-      await apply(ctx as never, { buildTimeoutMs: 1_000, autoScreenshot: false })
-      assert.equal(tools.has('draft_test'), false)
-    } finally {
-      if (previous === undefined) delete process.env.CROWDY_STUDIO_MODE
-      else process.env.CROWDY_STUDIO_MODE = previous
-    }
+  it('registers only the listed tools, so the game preset shares the page tools without the mod build', async () => {
+    const { ctx, tools } = harness()
+    await apply(ctx as never, { autoScreenshot: false, only: ['screenshot', 'game_observe', 'client_logs'] })
+    assert.deepEqual([...tools.keys()].sort(), ['client_logs', 'game_observe', 'screenshot'])
   })
 })
