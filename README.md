@@ -73,9 +73,19 @@ cached files. Both sides drop frames without the boot nonce: a
 implements the page side in `src/crowdy-dsh/`; it also confirms a live deploy
 with the player on the page before running it.
 
+The game's own host serves the page and `/dsh/`. Crowded Kingdoms does not
+host games: the developer deploys both to the game's origin, on any static
+host that can set response headers.
+[Host your game](https://docs.crowdedkingdoms.com/build-a-game/host-your-game)
+and the Construct's
+[hosting guide](https://github.com/CrowdedKingdoms/the-construct/blob/prod/docs/HOSTING.md)
+have the full header set and recipes for common hosts.
+
 Headers the host must send (verified with `crossOriginIsolated === true`):
-game page CSP unchanged except `frame-src 'self'`; every `/dsh/*` response
-carries `script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:`,
+the cross-origin isolation headers (COOP `same-origin` and a COEP) on every
+response, `/dsh/*` included; game page CSP unchanged except `frame-src 'self'`;
+every `/dsh/*` response carries
+`script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:`,
 `connect-src 'self' blob:`, `worker-src 'self' blob:`, `frame-ancestors 'self'`
 (the worker compiles pre-lowered module bodies with `new Function`; the harness
 document runs its own client module system). The API and model endpoints must
@@ -92,11 +102,12 @@ a `persistScope` of its own (sessions of the two editors never mix) and
 older worker says so instead of running the mod editor on a game.
 
 - **The draft is the page's.** CrowdyJS keeps it (a `DraftStore`: an overlay
-  over the repository at a base commit, in the browser for a hosted game, on
-  the dev server's checkout locally). The worker's filesystem is a view of it:
-  `draft.tree` once, then every change through `page.draftChanged`; text by
-  `draft.read` in batches, cached by blob id. Versions are git blob SHA-1s, so
-  listing, `stat` and `read_file` agree with what the page shows.
+  over the repository at a base commit, in the browser when the game runs from
+  its own deployed origin, on the dev server's checkout locally). The worker's
+  filesystem is a view of it: `draft.tree` once, then every change through
+  `page.draftChanged`; text by `draft.read` in batches, cached by blob id.
+  Versions are git blob SHA-1s, so listing, `stat` and `read_file` agree with
+  what the page shows.
 - **Writes are guarded the harness's way.** A write carries the tool's intent
   (`createIfAbsent`, or `replaceIfVersion` as `ifHash`); a file the player
   changed since the model read it is a stale write (`FS_STALE_VERSION`), never
@@ -141,7 +152,10 @@ Once the pin publishes, the hint is inert; drop it with the next SDK bump.
 `vfs-image.tar.gz`, ~7 MB), `BUILD.json` (package version, this repo's commit,
 upstream tag and commit, the CrowdyJS the worker bundles, sha256 of every file),
 `LICENSE.deepseek-harness` and `THIRD_PARTY_NOTICES.md`. Serve it under
-`/dsh/` of the game origin.
+`/dsh/` of the game's own origin, with the headers above.
+`preview/vfs-image.tar.gz` must reach the browser with no `Content-Encoding`
+header, because the worker decompresses it itself; a host that adds
+`Content-Encoding: gzip` to `.gz` files needs an exception for that file.
 
 The build refuses an artifact that names the builder's home directory or the
 upstream checkout path (`//#region` markers and `patched by` comments are

@@ -40,9 +40,11 @@ branch named by `crowdyDsh.sdkSourceBranch` in `package.json`; drop that hint
 with the next SDK bump once the pin publishes. `scripts/build-image.sh` refuses
 a local SDK whose version differs from the pin.
 
-Consumers (`the-construct` and the Crowded Kingdoms games) install this package
-as a devDependency and copy `dist/dsh-web/` under `public/dsh/` at build time.
-They pin the tier-matching version, never a caret.
+Consumers are the Construct template (`the-construct`) and the games built from
+it or embedding the harness, which their developers host (Crowded Kingdoms has
+hosted no games since 2026-10-29). They install this package as a devDependency
+and copy `dist/dsh-web/` under `public/dsh/` at build time, so the game's own
+host serves it. They pin the tier-matching version, never a caret.
 
 ## Where the files come from is the project's `source`, not a preference
 
