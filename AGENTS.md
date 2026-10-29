@@ -69,6 +69,28 @@ ever cross the bridge.
 in the same program. Frames without the current version or the boot nonce are
 dropped unread on both sides.
 
+## Game mode is a preset over the page's draft
+
+`studioMode: 'game'` in `crowdy.json` (bridge v5, 0.5.0) switches two things
+and nothing else: the one `crowdy-fs` row mounts `GameFileSystem` instead of
+the mod crates, and the page's `settings.yaml` makes `crowdy-game` the default
+preset. Which tools, skills, instructions and persona a game session has is
+that preset's YAML, not code that checks the mode: do not add mode branches to
+plugins, and do not add host-level rows that only one editor needs.
+
+- The page owns the draft (CrowdyJS `DraftStore`). The worker never talks to
+  GitHub in game mode and never commits; `commit_game_files` asks the harness
+  approval, then the page confirms with the player and commits.
+- The page channel is its own service (`crowdyBridgeClient`, profile row
+  `crowdy-bridge-client`). The game filesystem and the bridge both inject it;
+  the filesystem must not inject `crowdyBridge`, which injects `fs`.
+- Guidance comes from the game: its `STUDIO.md` (agent-instructions) and the
+  skills its playbook index lists (`./playbook-skills`). This repository is
+  public and names no game; `scripts/check-content-policy.mjs` refuses the
+  private game repositories by name.
+- A write keeps the harness's guarded-write semantics: map the intent, never
+  drop it. Versions are the page's git blob ids.
+
 ## Upstream is a pinned checkout, not a submodule
 
 `upstream.json` names the DeepSeek Harness tag and commit this package builds
@@ -102,7 +124,7 @@ answer (0.4.3). Do not describe a draft as invisible to other players.
   (`gh pr merge` refuses at preflight under the ruleset). `test` and `prod` need
   an admin to merge (same `update` lock as the other three-branch repos).
 - Requires Node 22.19+ and pnpm via corepack. `bash scripts/checkout-upstream.sh`
-  then `bash scripts/build-image.sh` builds, tests (87 `node:test` cases inside the
+  then `bash scripts/build-image.sh` builds, tests (112 `node:test` cases inside the
   upstream workspace), scrubs, stamps (`dist/dsh-web/BUILD.json`) and stages the
   npm package in `dist/npm/`.
 - Keep a journal of what you learn; update this file and `README.md` when the

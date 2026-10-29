@@ -6,7 +6,9 @@ packs them — with the stock harness web UI — into a static artifact that run
 **entirely in the player's browser**. Crowdy Studio embeds that artifact as the
 agent pane; the harness edits the project through the game API exactly as the
 Studio editor does, and calls the model through the tier's metered model
-endpoint with the player's own app token.
+endpoint with the player's own app token. In **game mode** the same harness
+edits a game's own repository instead, as a draft the page owns and the world
+previews, and commits only when the player asks ([Game mode](#game-mode)).
 
 Replaces the Crowdy Agent orchestrator in the CK API and the CrowdyJS agent
 dock (CrowdyJS 16). The page side of the bridge lives in CrowdyJS
@@ -31,11 +33,12 @@ game page (the-construct)                 iframe /dsh/index.html            Web 
 
 | Seam | Stock | Here |
 |---|---|---|
-| `ctx.fs` | `dsh-fs-sandbox` over the local disk | [`./fs`](src/fs/crowdy-file-system.ts): the project. Reads are always the project's files (`crowdyStudioProject`); for a project bound to GitHub those are the server's mirror of the repository at `githubSha`. Writes go by `source`: a STUDIO project through the files-only save under `expectedRevision`, a GITHUB project as one commit per changed file (`crowdyStudioGitHubPutFile` / `DeleteFile` carrying `expectedCommitSha`). Nothing is mirrored from here; the server advances the mirror with each commit, so Monaco and the agent look at one tree. Layout comes from `crowdyStudioGitHubLayout`; this package does not parse `crowdy.json`. GitHub is never required. `captures/` and `context/` are in-memory scratch dirs the page fills. |
+| `ctx.fs` | `dsh-fs-sandbox` over the local disk | [`./fs`](src/fs/crowdy-file-system.ts): the project. Reads are always the project's files (`crowdyStudioProject`); for a project bound to GitHub those are the server's mirror of the repository at `githubSha`. Writes go by `source`: a STUDIO project through the files-only save under `expectedRevision`, a GITHUB project as one commit per changed file (`crowdyStudioGitHubPutFile` / `DeleteFile` carrying `expectedCommitSha`). Nothing is mirrored from here; the server advances the mirror with each commit, so Monaco and the agent look at one tree. Layout comes from `crowdyStudioGitHubLayout`; this package does not parse `crowdy.json`. GitHub is never required. `captures/` and `context/` are in-memory scratch dirs the page fills. In game mode the same row mounts [`GameFileSystem`](src/fs/game-file-system.ts) instead: the page's draft of the bound repository (see below). |
 | `ctx.attachments` | `dsh-attachment-local` (sharp) | [`./attachments`](src/attachments/crowdy-attachment-store.ts): in-memory, header-sniffed dimensions; the browser worker has no native image codec. |
-| agent preset | `standard` | [`presets/crowdy`](presets/crowdy/agent.cordis.yml): file tools, in-memory `glob`/`grep`, `sdk_lookup`, and the Studio tools below. No shell, no web, no subagents. |
-| page link | — | [`./bridge`](src/bridge/index.ts): `ctx.crowdyBridge`, a `BroadcastChannel` to the Studio page ([protocol](src/bridge/protocol.ts)). |
-| tools | — | [`./tools`](src/tools/index.ts): `draft_test` and `deploy_live` (both confirmed by the player on the page, since a draft deploys the mod to the grid too; `deploy_live` is also approval-gated in the harness), `screenshot`, `runtime_status`, `client_logs`, `game_observe`, `project_list/open/create`, and (bridge v4) `grid_context`, `grid_program_run`, `grid_program_status` for JS grid programs in the project's grid. The page executes them with the player's authority. |
+| agent preset | `standard` | [`presets/crowdy`](presets/crowdy/agent.cordis.yml): file tools, in-memory `glob`/`grep`, `sdk_lookup`, and the Studio tools below. No shell, no web, no subagents. [`presets/crowdy-game`](presets/crowdy-game/agent.cordis.yml) is the game editor's: file tools and search over the draft, the page's `screenshot` / `game_observe` / `client_logs`, the game tools, the game's skills and its `STUDIO.md`. |
+| page link | — | [`./bridge-client`](src/bridge/client-service.ts): `ctx.crowdyBridgeClient`, a `BroadcastChannel` to the Studio page ([protocol](src/bridge/protocol.ts)). [`./bridge`](src/bridge/index.ts): `ctx.crowdyBridge`, the session side (boot handshake, token, scratch, change events). |
+| tools | — | [`./tools`](src/tools/index.ts): `draft_test` and `deploy_live` (both confirmed by the player on the page, since a draft deploys the mod to the grid too; `deploy_live` is also approval-gated in the harness), `screenshot`, `runtime_status`, `client_logs`, `game_observe`, `project_list/open/create`, and (bridge v4) `grid_context`, `grid_program_run`, `grid_program_status` for JS grid programs in the project's grid. The page executes them with the player's authority. `only` limits the list (the game preset takes the page tools alone). [`./game-tools`](src/tools/game.ts): `commit_game_files` (approval-gated here and confirmed on the page), `preview_status`, `read_playbook`. |
+| skills | `skill-filesystem` | [`./playbook-skills`](src/skills/playbook.ts): an upstream skill provider over `studio.listSkills` / `studio.readPlaybook`, so the skills are whatever the game's playbook lists. Game preset only. |
 | model route | pi-ai | `llm-deepseek` (direct fetch; pi-ai is a stub in the worker) pointed at the tier model endpoint via `settings.yaml`. |
 | persistence | disk | [`./persist`](src/persist/index.ts): mirrors `home/sessions`, `home/storages`, `settings.yaml` to OPFS; the page restores them as a boot overlay. |
 
@@ -47,8 +50,9 @@ The iframe posts `{type:'crowdy-dsh:ready'}`; the page answers with:
 iframe.contentWindow.postMessage({
   type: 'crowdy-dsh:boot',
   files: {
-    'crowdy.json': JSON.stringify({ graphqlUrl, appId, projectId, bridgeChannel, bridgeNonce, root: '/dsh/workspace', persistScope }),
-    'settings.yaml': `llm-deepseek:\n  apiKeyEnv: CROWDY_APP_TOKEN\n  baseURL: ${modelBaseUrl}\n  thinking: disabled\n  models: [...]\nagent-default-model:\n  provider: deepseek-official\n  model: ${defaultModel}\n`,
+    'crowdy.json': JSON.stringify({ graphqlUrl, appId, projectId, bridgeChannel, bridgeNonce, root: '/dsh/workspace', persistScope, studioMode }),
+    'settings.yaml': `llm-deepseek:\n  apiKeyEnv: CROWDY_APP_TOKEN\n  baseURL: ${modelBaseUrl}\n  thinking: disabled\n  models: [...]\nagent-default-model:\n  provider: deepseek-official\n  model: ${defaultModel}\n`
+      + (studioMode === 'game' ? 'agent-presets:\n  default: crowdy-game\n' : ''),
   },
   nonce: bridgeNonce,    // one-time secret; every bridge frame carries it
   persistScope,          // OPFS directory, e.g. `${appId}/${userId}`
@@ -76,6 +80,39 @@ carries `script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:`,
 (the worker compiles pre-lowered module bodies with `new Function`; the harness
 document runs its own client module system). The API and model endpoints must
 be same-origin or in `connect-src`.
+
+## Game mode
+
+A Construct-template game (the API reports its layout `kind` as
+`CONSTRUCT_GAME`) is edited as its own repository, not as Studio crates. The
+page decides: it boots the worker with `studioMode: 'game'` in `crowdy.json`,
+a `persistScope` of its own (sessions of the two editors never mix) and
+`agent-presets.default: crowdy-game` in `settings.yaml`. The worker reports
+`modes: ['mod', 'game']` in `worker.ready`; a page that boots game mode on an
+older worker says so instead of running the mod editor on a game.
+
+- **The draft is the page's.** CrowdyJS keeps it (a `DraftStore`: an overlay
+  over the repository at a base commit, in the browser for a hosted game, on
+  the dev server's checkout locally). The worker's filesystem is a view of it:
+  `draft.tree` once, then every change through `page.draftChanged`; text by
+  `draft.read` in batches, cached by blob id. Versions are git blob SHA-1s, so
+  listing, `stat` and `read_file` agree with what the page shows.
+- **Writes are guarded the harness's way.** A write carries the tool's intent
+  (`createIfAbsent`, or `replaceIfVersion` as `ifHash`); a file the player
+  changed since the model read it is a stale write (`FS_STALE_VERSION`), never
+  an overwrite. `.git`, `node_modules`, `.env*` and `.github/workflows` are not
+  repository files here; `captures/` and `context/` are page scratch.
+- **Nothing commits on its own.** `commit_game_files {message, paths?}` asks
+  the harness approval, then the page shows the files and the message and the
+  player confirms; the page commits them as one commit against the draft's
+  base. A conflict (the branch moved under an edited file) comes back for the
+  player to settle in the Files pane.
+- **The game brings its guidance.** The preset reads the game's `STUDIO.md` as
+  its instructions (not `AGENTS.md`, which a repository writes for an agent
+  with a shell) and lists the skills the game's playbook names in
+  `skills/index.json`. Nothing in this package names a game.
+- **`preview_status`** asks the page whether the running world took the latest
+  draft revision, with the errors it hit by file and line.
 
 ## Building the artifact
 
