@@ -10,7 +10,8 @@
 #      the unmodified read/write/edit/read_image tools operate on the project;
 #   2. the sharp-backed attachment store is replaced by an in-memory one that
 #      works without native modules, so screenshots reach the model;
-#   3. the page bridge joins, and the `crowdy` preset becomes the default.
+#   3. the page bridge joins, and the `crowdy` preset becomes the default (a
+#      game-mode boot's settings.yaml makes it `crowdy-game`).
 #
 # Connection settings arrive at boot as `$DSH_HOME/crowdy.json` (an overlay the
 # Studio page writes), never from this file.
@@ -69,6 +70,8 @@
     default: crowdy
 
 - insert:
+    # One row, one ctx.fs: the mod crates, or the game draft when crowdy.json
+    # says studioMode game (the page owns that draft).
     - id: crowdy-fs
       name: '@crowdedkingdoms/crowdy-dsh/fs'
       config:
@@ -76,23 +79,11 @@
         # project mount so a session's cwd IS the project.
         root: /dsh/workspace
 
-    # Mounts only when crowdy.json says studioMode game. The mod filesystem
-    # above returns without mounting in that boot, so exactly one ctx.fs exists.
-    - id: crowdy-fs-game
-      name: '@crowdedkingdoms/crowdy-dsh/fs-game'
+    # The page channel on its own: the game filesystem and the bridge both use it.
+    - id: crowdy-bridge-client
+      name: '@crowdedkingdoms/crowdy-dsh/bridge-client'
       config:
-        root: /dsh/workspace
-
-    - id: crowdy-tools-game
-      name: '@crowdedkingdoms/crowdy-dsh/tools-game'
-
-    - id: crowdy-persona-game
-      name: '@crowdedkingdoms/crowdy-dsh/persona-game'
-
-    # Registers mmo-dock-scene and mmo-dock-rules when this boot is game mode.
-    # The catalog the model sees comes from tool-skill on the crowdy preset.
-    - id: crowdy-skills-game
-      name: '@crowdedkingdoms/crowdy-dsh/skills-game'
+        timeoutMs: 15000
 
     - id: attachment-crowdy
       name: '@crowdedkingdoms/crowdy-dsh/attachments'
@@ -102,8 +93,6 @@
 
     - id: crowdy-bridge
       name: '@crowdedkingdoms/crowdy-dsh/bridge'
-      config:
-        timeoutMs: 15000
 
     # Mirror sessions, projection caches and settings into the origin-private
     # file system; the page restores them as an overlay on the next boot.

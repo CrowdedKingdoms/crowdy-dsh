@@ -1,0 +1,3 @@
+name: Crowdy Studio game
+description: Edits the bound game repository as a draft the player's world previews, commits it to GitHub when the player asks, and follows the game's own guidance and skills. No shell and no disk access, because the repository is not on this machine.
+order: 1

@@ -130,8 +130,7 @@ describe('CrowdyFileSystem', () => {
 
     it('waits for the token the page sends over the bridge before the first load', async () => {
       const { api, project } = harness([file('SERVER', 'src/main.rs', 'fn main() {}')])
-      // Other harnesses in this process published their token to the
-      // environment, as the browser backend does; a fresh worker starts clean.
+      // A fresh worker starts with no token in its environment.
       delete process.env.CROWDY_APP_TOKEN
       const ctx = new Context()
       const fs = new CrowdyFileSystem(ctx, {
@@ -153,7 +152,6 @@ describe('CrowdyFileSystem', () => {
       assert.equal(settled, false, 'the read is parked until the token arrives')
       fs.setToken('page-token')
       assert.equal(await read, 'fn main() {}')
-      assert.equal(process.env.CROWDY_APP_TOKEN, 'page-token')
       void project
     })
 

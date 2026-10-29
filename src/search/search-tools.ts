@@ -30,6 +30,7 @@ import type {
 } from '@deepseek-ai/dsh-tools'
 
 import { normalizeAbsolute, resolveAgainst } from '../crowdy/paths.js'
+import { isStudioFileSystem, type StudioFileSystem } from '../fs/studio-fs.js'
 import { globMatches, GlobSyntaxError } from './glob-match.js'
 
 export interface Config {
@@ -285,15 +286,10 @@ interface SystemPromptLike {
   section(entry: { name: string; order: number; text: string }): void
 }
 
-interface SearchableFs {
-  mountRoot: string
-  searchSnapshot(): Promise<{ root: string; files: Array<{ virtualPath: string; content: string }> }>
-}
-
 /** The mounted Studio filesystem, mod or game, or a clear miscomposition error. */
-function requireCrowdyFs(ctx: Context): SearchableFs {
-  const fs = ctx.fs as Partial<SearchableFs> | undefined
-  if (fs && typeof fs.mountRoot === 'string' && typeof fs.searchSnapshot === 'function') return fs as SearchableFs
+function requireCrowdyFs(ctx: Context): StudioFileSystem {
+  const fs: unknown = ctx.fs
+  if (isStudioFileSystem(fs)) return fs
   throw new Error('the Crowdy search tools require a Studio filesystem backend mounted as ctx.fs')
 }
 
