@@ -30,5 +30,8 @@
       config:
         root: !!js process.env.CROWDY_MOUNT ?? require('node:os').homedir() + '/crowdy-mount'
 
+    - id: crowdy-bridge-client
+      name: '@crowdedkingdoms/crowdy-dsh/bridge-client'
+
     - id: crowdy-bridge
       name: '@crowdedkingdoms/crowdy-dsh/bridge'

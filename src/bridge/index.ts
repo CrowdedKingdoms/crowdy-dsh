@@ -14,13 +14,18 @@ import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-agent'
 
-import { CrowdyFileSystem } from '../fs/crowdy-file-system.js'
+import { publishAppToken } from '../crowdy/token.js'
+import { isStudioFileSystem, type StudioFileSystem } from '../fs/studio-fs.js'
 import type { ScratchFile } from '../fs/scratch-store.js'
-import { BridgeClient, BridgeError } from './client.js'
-import type { GridContext, ScreenshotResult, StudioDiagnostic, RuntimeStatus } from './protocol.js'
+import type { BridgeClient } from './client.js'
+import type { CrowdyBridgeClientService } from './client-service.js'
+import type { GridContext, ScreenshotResult, StudioDiagnostic, RuntimeStatus, StudioMode } from './protocol.js'
 
 export { BridgeClient, BridgeError } from './client.js'
 export * from './protocol.js'
+
+/** What this worker can mount; the page refuses game mode against a worker without it. */
+const MODES: StudioMode[] = ['mod', 'game']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -28,51 +33,40 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-export interface Config {
-  /** Override the channel name from `crowdy.json` (tests). */
-  channel?: string
-  /** Override the boot nonce from `crowdy.json` (tests). */
-  nonce?: string
-  /** Default request deadline in milliseconds. */
-  timeoutMs?: number
-}
+export type Config = Record<string, never>
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'crowdy-bridge'
 
 export class CrowdyBridge extends Service {
-  static inject = ['fs']
-  static Config: z<Config> = z.object({
-    channel: z.string(),
-    nonce: z.string(),
-    timeoutMs: z.number().default(15_000),
-  }) as unknown as z<Config>
+  static inject = ['fs', 'crowdyBridgeClient']
+  static Config: z<Config> = z.object({}) as unknown as z<Config>
 
   readonly client: BridgeClient
-  readonly fs: CrowdyFileSystem
+  readonly fs: StudioFileSystem
   private captureCounter = 0
   private readonly disposers: Array<() => void> = []
 
-  constructor(ctx: Context, config: Config = {}) {
+  constructor(ctx: Context, _config: Config = {}) {
     super(ctx, 'crowdyBridge')
-    const fs = ctx.fs
-    if (!(fs instanceof CrowdyFileSystem)) {
-      throw new Error('crowdy-bridge: ctx.fs must be the Crowdy filesystem backend (@crowdedkingdoms/crowdy-dsh/fs).')
+    const fs: unknown = ctx.fs
+    if (!isStudioFileSystem(fs)) {
+      throw new Error('crowdy-bridge: ctx.fs must be a Crowdy Studio filesystem (@crowdedkingdoms/crowdy-dsh/fs).')
     }
     this.fs = fs
-    this.client = new BridgeClient({
-      channel: config.channel ?? fs.boot.bridgeChannel,
-      nonce: config.nonce ?? fs.boot.bridgeNonce,
-      timeoutMs: config.timeoutMs,
-    })
+    this.client = (ctx as unknown as { crowdyBridgeClient: CrowdyBridgeClientService }).crowdyBridgeClient.client
     this.wire()
-    // Registrations unwind with the plugin: the channel closes and the fs
-    // listeners detach when the row unloads.
+    // Registrations unwind with the plugin: the fs listeners detach when the row unloads.
+    // The channel belongs to the bridge-client service and closes with it.
     ctx.effect(() => () => {
       for (const dispose of this.disposers) dispose()
       this.disposers.length = 0
-      this.client.close()
     }, 'crowdy bridge')
+  }
+
+  /** The editor this worker mounted. */
+  get studioMode(): StudioMode {
+    return this.fs.studioMode
   }
 
   /** Whether a Studio page is attached (page-executed tools can work). */
@@ -128,7 +122,10 @@ export class CrowdyBridge extends Service {
     const live = agents?.list() ?? []
     let sessionId = live.length > 0 ? live[live.length - 1]!.session.id : undefined
     if (sessionId === undefined) {
-      const created = await sessions.create({ cwd: this.fs.mountRoot, agentPreset: 'crowdy' })
+      const created = await sessions.create({
+        cwd: this.fs.mountRoot,
+        agentPreset: this.fs.studioMode === 'game' ? 'crowdy-game' : 'crowdy',
+      })
       sessionId = created.sessionId
     }
     await sessions.prompt(
@@ -147,14 +144,21 @@ export class CrowdyBridge extends Service {
     if (!client.available) return
     this.disposers.push(
       client.on('page.hello', (payload) => {
-        if (payload.appToken) fs.setToken(payload.appToken)
+        if (payload.appToken) {
+          publishAppToken(payload.appToken)
+          fs.setToken(payload.appToken)
+        }
         if (payload.projectId) fs.setProject(payload.projectId)
         fs.invalidate()
-        client.emit('worker.ready', { root: fs.mountRoot, ...(fs.storeReason ? { store: fs.storeReason } : {}) })
+        client.emit('worker.ready', this.readyPayload())
       }),
       client.on('page.token', (payload) => {
-        // Also republishes CROWDY_APP_TOKEN, which the model route reads per request.
+        // CROWDY_APP_TOKEN is what the model route reads per request.
+        publishAppToken(payload.appToken)
         fs.setToken(payload.appToken)
+      }),
+      client.on('page.draftChanged', (payload) => {
+        fs.applyDraftChange(payload)
       }),
       client.on('page.project', (payload) => {
         if (payload.projectId) fs.setProject(payload.projectId)
@@ -189,7 +193,12 @@ export class CrowdyBridge extends Service {
     )
     for (const message of fs.drainWarnings()) client.emit('worker.warning', { message })
     // Announce so a page that connected before the worker booted learns we exist.
-    client.emit('worker.ready', { root: fs.mountRoot })
+    client.emit('worker.ready', this.readyPayload())
+  }
+
+  private readyPayload(): { root: string; store?: string; modes: StudioMode[]; mode: StudioMode } {
+    const store = this.fs.storeReason
+    return { root: this.fs.mountRoot, ...(store ? { store } : {}), modes: MODES, mode: this.fs.studioMode }
   }
 }
 

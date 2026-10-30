@@ -57,3 +57,19 @@ describe('draft_test', () => {
     assert.ok((tools.get('draft_test')!.timeoutMs ?? 0) > 61_000)
   })
 })
+
+describe('tool selection', () => {
+  it('registers every mod tool by default and none of the game tools', async () => {
+    const { ctx, tools } = harness()
+    await apply(ctx as never, { buildTimeoutMs: 1_000, autoScreenshot: false })
+    assert.equal(tools.has('draft_test'), true)
+    assert.equal(tools.has('deploy_live'), true)
+    assert.equal(tools.has('commit_game_files'), false)
+  })
+
+  it('registers only the listed tools, so the game preset shares the page tools without the mod build', async () => {
+    const { ctx, tools } = harness()
+    await apply(ctx as never, { autoScreenshot: false, only: ['screenshot', 'game_observe', 'client_logs'] })
+    assert.deepEqual([...tools.keys()].sort(), ['client_logs', 'game_observe', 'screenshot'])
+  })
+})

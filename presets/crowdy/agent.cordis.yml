@@ -13,6 +13,7 @@
 #                            deliberately NOT through `ctx.fs`. The Crowdy
 #                            search plugin registers the same names in memory.
 #   tool-jobs, skill-*     — background jobs and skill discovery walk local roots.
+#                            The game editor's preset (`crowdy-game`) has skills.
 #   tool-web               — the platform's model endpoint forbids provider web
 #                            plugins; the harness gets no browser either.
 #   delegation             — subagents are a later cut (each one costs the

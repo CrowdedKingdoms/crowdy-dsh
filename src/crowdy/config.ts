@@ -51,6 +51,11 @@ export interface CrowdyBootConfig {
   studioOrigin?: string
   /** OPFS scope for session persistence (browser only); see `./persist`. */
   persistScope?: string
+  /**
+   * Which exclusive Studio pair this boot mounts. `mod` is the in-game crate
+   * editor. `game` is the bound repository. Omitted means `mod`.
+   */
+  studioMode?: 'mod' | 'game'
 }
 
 const ENV_KEYS: Record<keyof CrowdyBootConfig, string> = {
@@ -65,6 +70,7 @@ const ENV_KEYS: Record<keyof CrowdyBootConfig, string> = {
   bridgeNonce: 'CROWDY_BRIDGE_NONCE',
   studioOrigin: 'CROWDY_STUDIO_ORIGIN',
   persistScope: 'CROWDY_PERSIST_SCOPE',
+  studioMode: 'CROWDY_STUDIO_MODE',
 }
 
 function readFile(home: string | undefined): Partial<CrowdyBootConfig> {
@@ -107,8 +113,14 @@ export function loadCrowdyConfig(overrides: Partial<CrowdyBootConfig> = {}): Cro
     bridgeNonce: pick('bridgeNonce'),
     studioOrigin: pick('studioOrigin'),
     persistScope: pick('persistScope'),
+    studioMode: pick('studioMode') === 'game' ? 'game' : pick('studioMode') === 'mod' ? 'mod' : undefined,
   }
   return config
+}
+
+/** The pair this boot mounts. Anything other than `game` is the mod editor. */
+export function activeStudioMode(overrides: Partial<CrowdyBootConfig> = {}): 'mod' | 'game' {
+  return loadCrowdyConfig(overrides).studioMode === 'game' ? 'game' : 'mod'
 }
 
 /** Human-readable reason the configuration cannot reach a project yet. */
