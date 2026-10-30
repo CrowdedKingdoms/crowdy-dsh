@@ -66,6 +66,7 @@ export class BridgeClient {
     { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> | undefined }
   >()
   private readonly listeners = new Map<string, Set<(payload: unknown) => void>>()
+  private readonly presenceWaiters: Array<() => void> = []
   private readonly timeoutMs: number
   private readonly nonce: string
   private sequence = 0
@@ -90,6 +91,21 @@ export class BridgeClient {
   /** True when a channel exists (a page may or may not be listening yet). */
   get available(): boolean {
     return this.channel !== undefined
+  }
+
+  /**
+   * Resolves once the page has said hello, or after `timeoutMs` either way
+   * (a request made then fails with the usual not-connected error).
+   */
+  whenPagePresent(timeoutMs = 10_000): Promise<void> {
+    if (this.pagePresent || !this.channel) return Promise.resolve()
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, timeoutMs)
+      this.presenceWaiters.push(() => {
+        clearTimeout(timer)
+        resolve()
+      })
+    })
   }
 
   on<E extends PageEvent>(event: E, listener: (payload: PageEventMap[E]) => void): () => void {
@@ -186,7 +202,10 @@ export class BridgeClient {
         return
       }
       case 'event': {
-        if (data.event === 'page.hello') this.pagePresent = true
+        if (data.event === 'page.hello') {
+          this.pagePresent = true
+          for (const wake of this.presenceWaiters.splice(0)) wake()
+        }
         if (data.event === 'page.bye') this.pagePresent = false
         const set = this.listeners.get(data.event)
         if (!set) return

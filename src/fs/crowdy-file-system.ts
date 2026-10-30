@@ -51,6 +51,8 @@ import {
 } from '../crowdy/paths.js'
 import { CrowdyProjectStore, describeSource, type ProjectSnapshot, type ProjectStore } from '../crowdy/project-store.js'
 import { ScratchStore } from './scratch-store.js'
+import type { StudioFileSystem } from './studio-fs.js'
+import type { DraftChangedPayload } from '../bridge/protocol.js'
 
 export type Config = Partial<CrowdyBootConfig> & {
   /** How long a project snapshot may be reused for reads, in milliseconds. */
@@ -93,15 +95,9 @@ export function versionOf(content: string): FsVersion {
  * absent there), so the token is published to `process.env` directly. In the
  * cockpit the variable is already set by the operator and this is a no-op.
  */
-export const APP_TOKEN_ENV = 'CROWDY_APP_TOKEN'
+export { APP_TOKEN_ENV } from '../crowdy/token.js'
 /** How long the first project load waits for the page to hand over the token. */
 const CREDENTIAL_WAIT_MS = 5_000
-
-function publishTokenToEnvironment(token: string | undefined): void {
-  if (!token) return
-  if (typeof process === 'undefined' || !process.env) return
-  process.env[APP_TOKEN_ENV] = token
-}
 
 function byteLength(text: string): number {
   return new TextEncoder().encode(text).byteLength
@@ -118,7 +114,12 @@ function countOccurrences(haystack: string, needle: string): number {
   return count
 }
 
-export class CrowdyFileSystem extends FileSystem {
+export class CrowdyFileSystem extends FileSystem implements StudioFileSystem {
+  readonly studioMode = 'mod' as const
+
+  /** The mod crates do not follow a game draft. */
+  applyDraftChange(_change: DraftChangedPayload): void {}
+
   static Config: z<Config> = z.object({
     graphqlUrl: z.string(),
     appId: z.string(),
@@ -161,7 +162,6 @@ export class CrowdyFileSystem extends FileSystem {
     this.snapshotTtl = snapshotTtlMs ?? 750
     this.boot = loadCrowdyConfig(overrides)
     this.root = normalizeAbsolute(this.boot.root ?? DEFAULT_ROOT)
-    publishTokenToEnvironment(this.boot.appToken)
     this.client = new CrowdyStudioClient({
       endpoint: this.boot.graphqlUrl,
       appId: this.boot.appId,
@@ -195,7 +195,6 @@ export class CrowdyFileSystem extends FileSystem {
   setToken(token: string | undefined): void {
     this.boot = { ...this.boot, appToken: token }
     this.client.setToken(token)
-    publishTokenToEnvironment(token)
     if (token) {
       const waiters = this.tokenWaiters
       this.tokenWaiters = []

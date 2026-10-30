@@ -29,8 +29,8 @@ import type {
   ToolResult,
 } from '@deepseek-ai/dsh-tools'
 
-import { CrowdyFileSystem } from '../fs/crowdy-file-system.js'
 import { normalizeAbsolute, resolveAgainst } from '../crowdy/paths.js'
+import { isStudioFileSystem, type StudioFileSystem } from '../fs/studio-fs.js'
 import { globMatches, GlobSyntaxError } from './glob-match.js'
 
 export interface Config {
@@ -286,14 +286,11 @@ interface SystemPromptLike {
   section(entry: { name: string; order: number; text: string }): void
 }
 
-/** The mounted Crowdy filesystem backend, or a clear miscomposition error. */
-function requireCrowdyFs(ctx: Context): CrowdyFileSystem {
+/** The mounted Studio filesystem, mod or game, or a clear miscomposition error. */
+function requireCrowdyFs(ctx: Context): StudioFileSystem {
   const fs: unknown = ctx.fs
-  if (fs instanceof CrowdyFileSystem) return fs
-  throw new Error(
-    'the Crowdy search tools require the Crowdy Studio filesystem backend ' +
-      '(@crowdy/dsh-cockpit) mounted as ctx.fs',
-  )
+  if (isStudioFileSystem(fs)) return fs
+  throw new Error('the Crowdy search tools require a Studio filesystem backend mounted as ctx.fs')
 }
 
 /**

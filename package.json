@@ -1,6 +1,6 @@
 {
   "name": "@crowdedkingdoms/crowdy-dsh",
-  "version": "0.4.14",
+  "version": "0.5.1",
   "private": false,
   "license": "MIT",
   "repository": {
@@ -22,8 +22,12 @@
       "default": "./lib/index.js"
     },
     "./fs": {
-      "types": "./lib/types/fs/crowdy-file-system.d.ts",
-      "default": "./lib/fs/crowdy-file-system.js"
+      "types": "./lib/types/fs/entry.d.ts",
+      "default": "./lib/fs/entry.js"
+    },
+    "./bridge-client": {
+      "types": "./lib/types/bridge/client-service.d.ts",
+      "default": "./lib/bridge/client-service.js"
     },
     "./search": {
       "types": "./lib/types/search/search-tools.d.ts",
@@ -36,6 +40,14 @@
     "./tools": {
       "types": "./lib/types/tools/index.d.ts",
       "default": "./lib/tools/index.js"
+    },
+    "./game-tools": {
+      "types": "./lib/types/tools/game.d.ts",
+      "default": "./lib/tools/game.js"
+    },
+    "./playbook-skills": {
+      "types": "./lib/types/skills/playbook.d.ts",
+      "default": "./lib/skills/playbook.js"
     },
     "./attachments": {
       "types": "./lib/types/attachments/crowdy-attachment-store.d.ts",
@@ -81,10 +93,11 @@
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-user-approval": "workspace:*",
-    "@deepseek-ai/schemastery": "workspace:*"
+    "@deepseek-ai/schemastery": "workspace:*",
+    "@deepseek-ai/dsh-skill": "workspace:*"
   },
   "devDependencies": {
-    "@crowdedkingdoms/crowdyjs": "18.21.0",
+    "@crowdedkingdoms/crowdyjs": "18.23.1-test.1",
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
