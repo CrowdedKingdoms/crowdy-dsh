@@ -1,6 +1,6 @@
 {
   "name": "@crowdedkingdoms/crowdy-dsh",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": false,
   "license": "MIT",
   "repository": {
@@ -97,7 +97,7 @@
     "@deepseek-ai/dsh-skill": "workspace:*"
   },
   "devDependencies": {
-    "@crowdedkingdoms/crowdyjs": "18.23.1-dev.1",
+    "@crowdedkingdoms/crowdyjs": "18.24.0-dev.1",
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
